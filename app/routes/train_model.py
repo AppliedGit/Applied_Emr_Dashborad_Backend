@@ -17,7 +17,7 @@ from functools import wraps
 import io
 from PIL import Image
 from dotenv import load_dotenv
-
+from werkzeug.utils import secure_filename
 
 load_dotenv()
 
@@ -67,7 +67,21 @@ async def create_class():
         print("Class created successfully.")
         upload_result = await s3.upload_file(folder_name, images, image_class_name=image_class_name) 
         if upload_result.get('success'):
-           print("Images uploaded successfully.")
+            print("Images uploaded successfully.")
+            response = current_app.authentication.get_username(request)
+            user_name = response.get('username')
+            status = 'n'
+            query = "INSERT INTO train_model (user_id, model_name, status)  SELECT user_id, %s, %s FROM users  WHERE user_name = %s;"
+            value = (folder_name, status, user_name)
+           
+            res = current_app.database.execute_query(query,value)
+
+            # if res["success"] and res["error_code"] == 200:
+               
+            #     else:
+            #         print(f"Invalid Username...{username}")
+            #         return api_json_response_format(False,str("Sorry, unable to authenticate. Invalid Username..."),401,{})
+
         else:
             print(f"Image not uploaded: {result.get('message')}")
             return api_json_response_format(False, "Class created but image not uploaded.", 500, {}) 
@@ -85,7 +99,7 @@ async def list_dir():
 
     prefix = data.get('folder_path')
 
-    dir_list = await s3.list_folder(prefix)
+    dir_list = await s3.list_folder(request=request, prefix=prefix)
 
     if not dir_list:
         return api_json_response_format(False, "No folders", 400, {})
@@ -108,7 +122,22 @@ async def upload_image():
     result = await s3.upload_file(folder_path, files)
 
     if not result.get("success"):
-        return api_json_response_format(False, result.get('message'), result.get('error_code'), {})
+        model_name = folder_path.split('/'[0])
+        response = current_app.authentication.get_username(request)
+        user_name = response.get('username')
+        status = 'n'
+        query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
+        value = (status, model_name, user_name)
+        
+        res = current_app.database.execute_query(query,value)
+
+        # if res["success"] and res["error_code"] == 200:
+        #     if res["data"]:
+        #         password = res["data"][0]["userpwd"]
+        #     else:
+        #         print(f"Invalid Username...{username}")
+        #         return api_json_response_format(False,str("Sorry, unable to authenticate. Invalid Username..."),401,{})
+        # return api_json_response_format(False, result.get('message'), result.get('error_code'), {})
     
 
     return api_json_response_format(True, "Image uploaded successfully.", 200, {})
@@ -259,6 +288,13 @@ async def train_model():
         torch.save(best_model, pth_file_path)
 
         print("Training completed. Best model saved.")
+        response = current_app.authentication.get_username(request)
+        user_name = response.get('username')
+        status = 'y'
+        query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
+        value = (status, temp_base_path, user_name)
+        res = current_app.database.execute_query(query,value)
+
         with open(pth_file_path, "rb") as f:
                 data = f.read()
                 file_like_obj = io.BytesIO(data)
@@ -281,136 +317,14 @@ async def train_model():
         print("Exception occured. Error : "+str(e))
         return api_json_response_format(False, str(e), 500, {})
 
-        
-# @train_bp.route('/start_predict', methods=['POST'])
-# @Authentication.token_required
-# async def start_predict():
-
-#     data = request.get_json()
-
-#     folder_name = data.get('folder_name')
-#     temp_folder_name = folder_name.split('/')[0]
-#     load_model = data.get('load_model')
-#     # folder_name = f"{folder_name.split('/')[0]}/"
-
-#     if not folder_name:
-#         return api_json_response_format(False, "Folder name not found.", 404, {})
-    
-#     json_file_path = f"{temp_folder_name}/class_to_idx.json"
-
-#     pth_file_path = f"{temp_folder_name}/{temp_folder_name}_graph_classifier.pth"
-#     if load_model:
-#         is_folder_exist = await s3.get_dirs(folder_name, check=True)
-#         is_json_exist = await s3.get_dirs(json_file_path, type="file")
-#         is_pth_exist = await s3.get_dirs(pth_file_path, type="file")
-
-#         if not is_folder_exist:
-#             return api_json_response_format(False, "Folder path not found.", 404, {})
-        
-#         tmp_dir = 'predict'
-#         if os.path.exists(tmp_dir):
-#             shutil.rmtree(tmp_dir)
-
-#         os.makedirs(tmp_dir, exist_ok=True)
-
-#         if not is_json_exist:
-#             return api_json_response_format(False, "Class to idx json file found. Please train your model", 404, {})
-
-#         if not is_pth_exist:
-#             return api_json_response_format(False, "PTH file not found. Please train your model.", 404, {})
-        
-#         await s3.download_folder(temp_folder_name, tmp_dir+"/"+temp_folder_name)
-#         print(f"{temp_folder_name} class files downloaded from S3.")
-        
-#         local_json_path = tmp_dir+"/"+json_file_path
-#         local_pth_path = tmp_dir+"/"+pth_file_path
-#         local_image_path = tmp_dir+"/"+folder_name
-
-#         with open(local_json_path, 'r') as f:
-#             class_to_idx = json.load(f)
-#         idx_to_class = {v: k for k, v in class_to_idx.items()}
-#         class_names = [idx_to_class[i] for i in sorted(idx_to_class)]
-        
-
-#         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-#         model = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
-#         model.fc = nn.Linear(model.fc.in_features, len(class_names))
-#         model.load_state_dict(torch.load(local_pth_path, map_location=device))
-#         model = model.to(device)
-#         model.eval()
-
-#         transform = transforms.Compose([
-#             transforms.Resize((224, 224)),
-#             transforms.ToTensor(),
-#             transforms.Normalize([0.485, 0.456, 0.406],
-#                                 [0.229, 0.224, 0.225])
-#         ])
-
-#     def predict_image(image_path):
-#         image = Image.open(image_path).convert("RGB")
-#         input_tensor = transform(image).unsqueeze(0).to(device)
-#         with torch.no_grad():
-#             output = model(input_tensor)
-#             probabilities = torch.softmax(output, dim=1)
-#             confidence, predicted = torch.max(probabilities, 1)
-#         return class_names[predicted.item()], confidence.item() * 100
-    
-#     supported_exts = ('.jpg', '.jpeg', '.png', '.bmp')
-#     image_files = [f for f in os.listdir(local_image_path) if f.lower().endswith(supported_exts)]
-
-#     if not image_files:
-#         print("No valid image files found.")
-#         return api_json_response_format(False, "No valid image files found.", 404, {})
-    
-#     for filename in image_files:
-#         image_path = os.path.join(local_image_path, filename)
-#         try:
-#             pred_class, confidence = predict_image(image_path)
-#             print(f"\n{filename} -> Predicted: {pred_class} ({confidence:.2f}%)")
-#             user_input = input("Is this correct? (y/n): ").strip().lower()
-
-#             if user_input == "exit":
-#                 break
-#             elif user_input == "y":
-#                 continue  # do nothing
-#             elif user_input == "n":
-#                 print("Available classes:")
-#                 for i, cname in enumerate(class_names):
-#                     print(f"{i + 1}. {cname}")
-#                 try:
-#                     correct_index = int(input("Enter correct class number: ")) - 1
-#                     correct_class = class_names[correct_index]
-#                 except:
-#                     print("Invalid input. Skipping this image.")
-#                     continue
-
-#                 # Copy the image to both train and val folders of the correct class
-#                 dest_train = os.path.join(base_path, "train", correct_class)
-#                 dest_val = os.path.join(base_path, "val", correct_class)
-#                 os.makedirs(dest_train, exist_ok=True)
-#                 os.makedirs(dest_val, exist_ok=True)
-
-#                 shutil.copy(image_path, os.path.join(dest_train, filename))
-#                 shutil.copy(image_path, os.path.join(dest_val, filename))
-#                 print(f"Copied to: {dest_train} and {dest_val}")
-#         except Exception as e:
-#             print(f" Error processing {filename}: {e}")
-
-    
-    
-#     response = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix=f"{folder_name}{folder_name}_graph_classifier.pth", MaxKeys=1)
-#     if not response.get('KeyCount', 0) > 0:
-#         return api_json_response_format(False, "Modle file not found. Please train the model first.", 404, {})
-
-
 
 @train_bp.route('/start_predict', methods=['POST'])
 @Authentication.token_required
 async def start_predict():
     try:
-        data = request.get_json()
-        folder_name = data.get('folder_name')
-        load_model = data.get('load_model', False)
+        folder_name = request.form.get('folder_name')
+        load_model = request.form.get('load_model')
+        uploaded_files = request.files.getlist('images')
 
         if not folder_name:
             return api_json_response_format(False, "Folder name not found.", 404, {})
@@ -420,7 +334,7 @@ async def start_predict():
         pth_file_path = f"{temp_folder_name}/{temp_folder_name}_graph_classifier.pth"
 
         if load_model:
-            # Check if files exist in S3
+            # Check if model files exist in S3
             is_folder_exist = await s3.get_dirs(folder_name, check=True)
             is_json_exist = await s3.get_dirs(json_file_path, type="file")
             is_pth_exist = await s3.get_dirs(pth_file_path, type="file")
@@ -432,18 +346,26 @@ async def start_predict():
             if not is_pth_exist:
                 return api_json_response_format(False, "PTH model file not found.", 404, {})
 
-            # Setup temp directories
+            # Setup temp directory
             tmp_dir = 'predict'
             if os.path.exists(tmp_dir):
                 shutil.rmtree(tmp_dir)
             os.makedirs(tmp_dir, exist_ok=True)
 
-            # Download from S3
+            # Save uploaded files to temp folder
+            upload_path = os.path.join(tmp_dir, "uploaded_images")
+            os.makedirs(upload_path, exist_ok=True)
+            supported_exts = ('.jpg', '.jpeg', '.png', '.bmp')
+            for file in uploaded_files:
+                if file.filename.lower().endswith(supported_exts):
+                    filename = secure_filename(file.filename)
+                    file.save(os.path.join(upload_path, filename))
+
+            # Download model + json from S3
             await s3.download_folder(temp_folder_name, os.path.join(tmp_dir, temp_folder_name))
 
             local_json_path = os.path.join(tmp_dir, json_file_path)
             local_pth_path = os.path.join(tmp_dir, pth_file_path)
-            local_image_path = os.path.join(tmp_dir, folder_name)
             base_path = os.path.join(tmp_dir, temp_folder_name)
 
             # Load class mappings
@@ -476,16 +398,14 @@ async def start_predict():
                     confidence, predicted = torch.max(probabilities, 1)
                 return class_names[predicted.item()], confidence.item() * 100
 
-            # Process all valid images
-            supported_exts = ('.jpg', '.jpeg', '.png', '.bmp')
-            image_files = [f for f in os.listdir(local_image_path) if f.lower().endswith(supported_exts)]
-
+            # Predict uploaded images
+            image_files = [f for f in os.listdir(upload_path) if f.lower().endswith(supported_exts)]
             if not image_files:
-                return api_json_response_format(False, "No valid image files found.", 404, {})
+                return api_json_response_format(False, "No valid image files found in uploaded data.", 404, {})
 
             results = []
             for filename in image_files:
-                image_path = os.path.join(local_image_path, filename)
+                image_path = os.path.join(upload_path, filename)
                 try:
                     pred_class, confidence = predict_image(image_path)
                     results.append({
@@ -509,77 +429,56 @@ async def start_predict():
 
 
 
+
 @train_bp.route('/correct_predictions', methods=['POST'])
 @Authentication.token_required
 async def correct_predictions():
     try:
-        data = request.get_json()
-        corrections = data.get("corrections", [])
-        folder_name = data.get("folder_name")
+        
+        class_name = request.form.get('class_name')
+        user_response = request.form.get('user_response')
+        images = request.files.getlist('images')
 
-        if not folder_name or not corrections:
-            return api_json_response_format(False, "Missing folder_name or corrections.", 400, {})
+        if not class_name:
+            return api_json_response_format(False, "Class name not found.", 400, {})
+        
+        if not user_response:
+            return api_json_response_format(False, "Please select Yes or No", 400, {})
+        
+        if not images:
+            # if os.path.exists(tmp_dir):
+            #     with open('predict'+class_name, "rb") as file:
+            #         data = file.read()
+            #         image_file = io.BytesIO(data)
+            #         image_file.seek(0) 
 
-        temp_folder_name = folder_name.split('/')[0]
-        tmp_dir = 'predict'
-        local_image_path = os.path.join(tmp_dir, folder_name)
-        base_path = os.path.join(tmp_dir, temp_folder_name)
+                # result = await s3.upload_file(base_path, file_like_obj, file_name=json_file_name )
 
-        results = []
-        for correction in corrections:
-            filename = correction.get("filename")
-            user_response = correction.get("response")  # "yes" or "no"
-            corrected_class = correction.get("corrected_class")  # Only needed if "no"
+            return api_json_response_format(False, "Image not found.", 400, {})
 
-            if not filename or not user_response:
-                results.append({
-                    "filename": filename,
-                    "status": "skipped",
-                    "reason": "Missing filename or response"
-                })
-                continue
+        model_name = class_name.split('/')[0]
+        image_class_name = class_name.split('/')[-1]
+        
+        if user_response == "no" and class_name:
+            response = await s3.upload_file(class_name, images, image_class_name=image_class_name)
 
-            image_path = os.path.join(local_image_path, filename)
-            if not os.path.exists(image_path):
-                results.append({
-                    "filename": filename,
-                    "status": "skipped",
-                    "reason": "Image file not found"
-                })
-                continue
+        if response.get('sucsess'):
+            response = current_app.authentication.get_username(request)
+            user_name = response.get('username')
+            status = 'n'
+            query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
+            value = (status, model_name, user_name)
+            
+            res = current_app.database.execute_query(query,value)
+            return api_json_response_format(True, f"Picture added to model {model_name}", 200, {})
+        else:
+            return api_json_response_format(False, response.get('message'), response.get('error_code'), {})
 
-            if user_response == "yes":
-                # No action needed if prediction is correct
-                results.append({
-                    "filename": filename,
-                    "status": "correct"
-                })
-            elif user_response == "no" and corrected_class:
-                # Add the image to the corrected class folder
-                dest_train = os.path.join(base_path, "train", corrected_class)
-                dest_val = os.path.join(base_path, "val", corrected_class)
-                os.makedirs(dest_train, exist_ok=True)
-                os.makedirs(dest_val, exist_ok=True)
 
-                shutil.copy(image_path, os.path.join(dest_train, filename))
-                shutil.copy(image_path, os.path.join(dest_val, filename))
-
-                results.append({
-                    "filename": filename,
-                    "corrected_class": corrected_class,
-                    "status": "copied"
-                })
-            else:
-                results.append({
-                    "filename": filename,
-                    "status": "skipped",
-                    "reason": "Invalid response or corrected_class missing"
-                })
-
-        return api_json_response_format(True, "Corrections processed", 200, {"results": results})
+        
 
     except Exception as e:
-        return api_json_response_format(False, f"Server error: {str(e)}", 500, {})
+        return api_json_response_format(False, f"Error: {str(e)}", 500, {})
 
 
 

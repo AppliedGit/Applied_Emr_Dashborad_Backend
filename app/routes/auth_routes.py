@@ -27,18 +27,21 @@ def login():
         userpwd = auth.password
         password = None
 
-        query = 'SELECT `userpwd` FROM `users` WHERE user_name = %s'
+        query = 'SELECT `userpwd`,`role` FROM `users` WHERE user_name = %s'
         value = (username,)
         res = current_app.database.execute_query(query,value)
         if res["success"] and res["error_code"] == 200:
             if res["data"]:
                 password = res["data"][0]["userpwd"]
+                role = res["data"][0]["role"]
             else:
                 print(f"Invalid Username...{username}")
                 return api_json_response_format(False,str("Sorry, unable to authenticate. Invalid Username..."),401,{})
         
         if password == userpwd:
             res = current_app.authentication.get_api_user_access_token(username)
+            if res.get('success'):
+                res['data']['role'] = role
             return res
         else:
             print("Wrong Password..."+auth.password)
@@ -48,7 +51,7 @@ def login():
         print("Unable to issue api token, error : "+str(e))
         return api_json_response_format(False,"Sorry, unable to login. Error : "+str(e)+", We request you to try again.",500,{})
 
-@auth_bp.route('/refresh',methods=['GET'])
+@auth_bp.route('/refresh_token',methods=['GET'])
 @jwt_required(refresh=True)
 def refresh():
     token_result = {}

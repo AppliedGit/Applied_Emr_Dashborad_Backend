@@ -138,3 +138,26 @@ class Authentication:
             print(error)
             return self.api_json_response_format(False,"Sorry, We are unable to authenticate. Error : "+str(error)+", We request you to try again.",500,{})
         
+    def get_username(self, request):
+
+        auth_header = request.headers['Authorization'].split(" ")
+        if len(auth_header) != 2 or auth_header[0] != "Bearer":
+            return jsonify({"message": "Invalid Authorization header"}), 401
+            
+        token = auth_header[1]
+        try:
+            decoded_data = jwt.decode(
+                jwt=token,
+                key=self.JWT_SECRET_KEY,
+                algorithms=['HS256']
+            )
+            if "sub" in decoded_data:
+                return {"username": decoded_data["sub"], "status_code": 200}
+        except jwt.ExpiredSignatureError:
+            return {"status_code": 401}
+        except Exception as e:
+            print(f"Token auth error: {str(e)}")
+            return {"status_code": -1}
+           
+
+        
