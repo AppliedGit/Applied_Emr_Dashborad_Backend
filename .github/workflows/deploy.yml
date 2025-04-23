@@ -102,15 +102,7 @@ jobs:
           target: /root/.env
           strip_components: 0
 
-      - name: Deploy to Droplet
-        run: |
-            ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} "
-            docker stop ${{ env.CONTAINER_NAME }} || true &&
-            docker rm ${{ env.CONTAINER_NAME }} || true &&
-            docker pull ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }} &&
-            docker run -d --name ${{ env.CONTAINER_NAME }} -p ${{ env.APP_PORT }}:${{ env.APP_PORT }} --env-file /root/.env ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }}"
-
-      - name: Setup Systemd Service
+      - name: Deploy to Droplet and Setup Systemd Service
         run: |
           ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} "
             cat << EOF > /etc/systemd/system/${{ env.CONTAINER_NAME }}.service
