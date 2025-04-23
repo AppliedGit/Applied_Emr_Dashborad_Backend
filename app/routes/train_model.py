@@ -18,6 +18,8 @@ import io
 from PIL import Image
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
+import time
+import pandas as pd
 
 load_dotenv()
 
@@ -27,7 +29,7 @@ train_bp = Blueprint("train", __name__)
 
 BUCKET_NAME = os.getenv("BUCKET_NAME")
 
-ALLOWED_EXTENSIONS = set(['xls', 'csv', 'png', 'jpeg', 'jpg'])
+ALLOWED_EXTENSIONS = set(['xls', 'csv', 'png', 'jpeg', 'jpg', 'ppm', 'bmp', 'pgm', 'tif', 'tiff', 'webp'])
 
 
 @train_bp.route('/create_class', methods=['POST'])
@@ -38,7 +40,6 @@ async def create_class():
     # folder_name = data.get("folder_name")
     # no_of_classes = data.get("no_of_classes")
     # class_names = data.get("class_names")
-
     folder_name = request.form.get('folder_name')
     no_of_classes = request.form.get('no_of_classes')
     class_names_string = request.form.get('class_names')
@@ -83,7 +84,7 @@ async def create_class():
             #         return api_json_response_format(False,str("Sorry, unable to authenticate. Invalid Username..."),401,{})
 
         else:
-            print(f"Image not uploaded: {result.get('message')}")
+            print(f"Image not uploaded: {upload_result.get('message')}")
             return api_json_response_format(False, "Class created but image not uploaded.", 500, {}) 
         
         return api_json_response_format(True, "Class created successfully and Image uploaded.", 201, {})  
@@ -129,8 +130,11 @@ async def upload_image():
         query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
         value = (status, model_name, user_name)
         
-        res = current_app.database.execute_query(query,value)
-
+        res = current_app.database.update_query(query,value)
+        if res['data'] > 0:
+            print("Value updated.")
+        else:
+            print(f"Error: str{res['message']}")
         # if res["success"] and res["error_code"] == 200:
         #     if res["data"]:
         #         password = res["data"][0]["userpwd"]
@@ -248,6 +252,7 @@ async def train_model():
         best_acc = 0
         best_model = copy.deepcopy(model.state_dict())
 
+        start_time = time.time()
         for epoch in range(100):
             model.train()
             train_loss, correct, total = 0.0, 0, 0
@@ -282,6 +287,10 @@ async def train_model():
                 best_acc = val_acc
                 best_model = copy.deepcopy(model.state_dict())
                 print(">> New best model saved!")
+        end_time = time.time()
+        elapsed = end_time - start_time
+        print(f"Elapsed time: {elapsed:.4f} seconds")
+
         temp_base_path = base_path.split('/')[0]
         pth_file_name = f"{temp_base_path}_graph_classifier.pth"
         pth_file_path = tmp_dir+"/"+pth_file_name
@@ -293,8 +302,11 @@ async def train_model():
         status = 'y'
         query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
         value = (status, temp_base_path, user_name)
-        res = current_app.database.execute_query(query,value)
-
+        res = current_app.database.update_query(query,value)
+        if res['data'] > 0:
+            print("Value updated.")
+        else:
+            print(f"Error: str{res['message']}")
         with open(pth_file_path, "rb") as f:
                 data = f.read()
                 file_like_obj = io.BytesIO(data)
@@ -325,6 +337,7 @@ async def start_predict():
         folder_name = request.form.get('folder_name')
         load_model = request.form.get('load_model')
         uploaded_files = request.files.getlist('images')
+        excel_file = request.files.get('excel_file')
 
         if not folder_name:
             return api_json_response_format(False, "Folder name not found.", 404, {})
@@ -333,6 +346,20 @@ async def start_predict():
         json_file_path = f"{temp_folder_name}/class_to_idx.json"
         pth_file_path = f"{temp_folder_name}/{temp_folder_name}_graph_classifier.pth"
 
+        ext = excel_file.filename.split('.')[-1]
+        try:
+            if ext == "ods":
+                excel = pd.read_excel(excel_file, engine="odf")
+            elif ext in ["xls", "xlsx"]:
+                excel = pd.read_excel(excel_file, engine="openpyxl")
+            else:
+                print("Unsupported file format.")
+                return api_json_response_format(False, f"{excel_file.filename} is unsupported file format.", 400, {})
+        except Exception as e:
+            print(f"Error reading Excel file: {e}")
+
+        
+      
         if load_model:
             # Check if model files exist in S3
             is_folder_exist = await s3.get_dirs(folder_name, check=True)
@@ -404,6 +431,37 @@ async def start_predict():
                 return api_json_response_format(False, "No valid image files found in uploaded data.", 404, {})
 
             results = []
+            transition = None
+            transition_output = None  
+
+            transition_col = next((col for col in excel.columns if "transition time" in str(col).lower()), None)
+
+            if transition_col:
+                result = excel[excel[transition_col] > 60]
+                if result.empty:
+                    print("All transition times are ≤ 60 ms.")
+                    transition = "All transition times are ≤ 60 ms."
+                else:
+                    print("\nTransition times > 60 ms:")
+                    if "Tap changer transition" in excel.columns:
+                        transition_output = result[[transition_col, "Tap changer transition"]].to_string(index=False)
+                    else:
+                        transition_output = result[[transition_col]].to_string(index=False)
+
+                    print(transition_output)
+                    transition = f"{len(result)} rows with transition time > 60 ms."
+            else:
+                print("'Transition time' column not found.")
+                transition = "'Transition time' column not found."
+
+            results.append({
+                "transition": transition,
+                "output": transition_output
+            })
+
+
+
+
             for filename in image_files:
                 image_path = os.path.join(upload_path, filename)
                 try:
@@ -469,7 +527,11 @@ async def correct_predictions():
             query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
             value = (status, model_name, user_name)
             
-            res = current_app.database.execute_query(query,value)
+            res = current_app.database.update_query(query,value)
+            if res['data'] > 0:
+                print("Value updated.")
+            else:
+                print(f"Error: str{res['message']}")
             return api_json_response_format(True, f"Picture added to model {model_name}", 200, {})
         else:
             return api_json_response_format(False, response.get('message'), response.get('error_code'), {})

@@ -16,7 +16,7 @@ aws_s3 = AWS_S3()
 load_dotenv()
 
 BUCKET_NAME = os.getenv("BUCKET_NAME")
-ALLOWED_EXTENSIONS = set(['xls', 'csv', 'png', 'jpeg', 'jpg'])
+ALLOWED_EXTENSIONS = set(['xls', 'csv', 'png', 'jpeg', 'jpg', 'ppm', 'bmp', 'pgm', 'tif', 'tiff', 'webp'])
 s3 = aws_s3.get_s3_client()
 class S3:
     
@@ -214,7 +214,11 @@ class S3:
                 """
                 value = (model_name, user_name)
                 result = current_app.database.execute_query(query, value)
-                node["status"] = result["data"][0]["status"] if result.get('data') else "n"
+                print(f"[*]  result: {result}")
+                if result["data"]:
+                    node["status"] = result["data"][0]["status"] if result.get('data') else "n"
+                else:
+                    node["status"] = 'n'
 
 
 

@@ -14,6 +14,7 @@ class Database:
             user=os.environ.get('MYSQL_USER'),
             password=os.environ.get('MYSQL_PASSWORD'),
             database=os.environ.get('MYSQL_DB'),
+            port=int(os.environ.get('MYSQL_PORT')),
             autocommit=True,
             connect_timeout=60,
             cursorclass=pymysql.cursors.DictCursor
