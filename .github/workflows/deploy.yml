@@ -12,7 +12,7 @@ env:
   DROPLET_SIZE: s-4vcpu-8gb
   DROPLET_IMAGE: ubuntu-22-04-x64
   DROPLET_NAME: emr-droplet
-  DOCKER_REGISTRY: registry.digitalocean.com/emr-repository
+  DOCKER_REGISTRY: registry.digitalocean.com/emrapi
   DOCKER_IMAGE: emr-repository
   SSH_PORT: 22
   APP_PORT: 5000
