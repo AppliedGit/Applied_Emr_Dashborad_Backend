@@ -78,6 +78,7 @@ jobs:
 
       - name: Copy .env file
         run: |
+          if [ -d /root/.env ]; then rm -rf /root/.env; fi
           echo "${{ secrets.DATABASE }}" > .env
           echo "MYSQL_HOST=${{ secrets.MYSQL_HOST }}" >> .env
           echo "MYSQL_USER=${{ secrets.MYSQL_USER }}" >> .env
