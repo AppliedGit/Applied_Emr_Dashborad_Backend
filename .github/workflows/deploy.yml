@@ -57,13 +57,12 @@ jobs:
 
       - name: Install Docker & Certbot on Droplet
         run: |
-          ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} "
+            ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} "
             apt-get update -y &&
             apt-get install -y docker.io docker-compose nginx certbot python3-certbot-nginx &&
             usermod -aG docker root &&
             systemctl enable docker &&
-            systemctl start docker
-          "
+            systemctl start docker"
 
       - name: Login to DigitalOcean Container Registry
         run: doctl registry login --expiry-seconds 600
