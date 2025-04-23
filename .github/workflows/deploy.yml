@@ -105,7 +105,10 @@ jobs:
       - name: Deploy to Droplet and Setup Systemd Service
         run: |
           ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} "
-          
+
+            # Authenticate with DigitalOcean Container Registry
+            echo '${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}' | docker login registry.digitalocean.com -u doctl --password-stdin
+
             docker system prune -af --volumes || true
             docker pull ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }}
 
@@ -151,5 +154,5 @@ jobs:
       - name: Setup Certbot (HTTPS)
         run: |
           ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} "
-            certbot --nginx -d ${{ env.DOMAIN_NAME }} --non-interactive --agree-tos -m your-email@example.com
+            certbot --nginx -d ${{ env.DOMAIN_NAME }} --non-interactive --agree-tos -m appliedsw@aaspl.net
             "
