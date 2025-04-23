@@ -12,13 +12,12 @@ env:
   DROPLET_SIZE: s-4vcpu-8gb
   DROPLET_IMAGE: ubuntu-22-04-x64
   DROPLET_NAME: emr-droplet
-  DOCKER_REGISTRY: registry.digitalocean.com/emrapi
-  DOCKER_IMAGE: emr-repository
+  DOCKER_REGISTRY: registry.digitalocean.com/emr-repository
+  DOCKER_IMAGE: emrai
   SSH_PORT: 22
   APP_PORT: 5000
-  CONTAINER_NAME: emrapi
-  DOMAIN_NAME: 
- 
+  CONTAINER_NAME: emrapicontainer
+  DOMAIN_NAME: emrapi.aaspl.net
 
 jobs:
   deploy:
@@ -33,15 +32,18 @@ jobs:
         with:
           token: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
 
+      - name: Authenticate with DigitalOcean
+        run: doctl auth init --access-token ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+
       - name: Get or Create DigitalOcean Droplet
         id: droplet
         run: |
           DROPLET_ID=$(doctl compute droplet list --format ID,Name --no-header | awk '$2 == "${{ env.DROPLET_NAME }}" {print $1}')
           if [ -z "$DROPLET_ID" ]; then
             echo "Creating Droplet..."
-            DROPLET_ID=$(doctl compute droplet create ${{ env.DROPLET_NAME }} --region ${{ env.DIGITALOCEAN_REGION }} --size ${{ env.DIGITALOCEAN_SIZE }} --image ${{ env.DIGITALOCEAN_IMAGE }} --format ID --no-header)
+            DROPLET_ID=$(doctl compute droplet create ${{ env.DROPLET_NAME }} --region ${{ env.DIGITALOCEAN_REGION }} --size ${{ env.DROPLET_SIZE }} --image ${{ env.DROPLET_IMAGE }} --format ID --no-header)
             echo "Waiting for Droplet to become active..."
-            sleep 60 # Give time to droplet become available
+            sleep 60
           else
             echo "Droplet exists: $DROPLET_ID"
           fi
@@ -64,8 +66,8 @@ jobs:
             systemctl enable docker &&
             systemctl start docker"
 
-      - name: Login to DigitalOcean Container Registry
-        run: doctl registry login --expiry-seconds 600
+      - name: Docker Login to DigitalOcean Container Registry
+        run: echo "${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}" | docker login registry.digitalocean.com -u doctl --password-stdin
 
       - name: Build and Push Docker Image
         run: |
@@ -73,14 +75,6 @@ jobs:
           docker build -t ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:$IMAGE_TAG .
           docker push ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:$IMAGE_TAG
           echo "IMAGE_TAG=$IMAGE_TAG" >> $GITHUB_ENV
-
-      - name: Deploy to Droplet
-        run: |
-            ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} "
-            docker stop ${{ env.CONTAINER_NAME }} || true &&
-            docker rm ${{ env.CONTAINER_NAME }} || true &&
-            docker pull ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }} &&
-            docker run -d --name ${{ env.CONTAINER_NAME }} -p ${{ env.APP_PORT }}:${{ env.APP_PORT }} --env-file /root/.env ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }}"
 
       - name: Copy .env file
         run: |
@@ -97,9 +91,6 @@ jobs:
           echo "AWS_REGION=${{ secrets.AWS_REGION }}" >> .env
           echo "BUCKET_NAME=${{ secrets.BUCKET_NAME }}" >> .env
 
-
-          
-          
       - name: Transfer .env file to Droplet
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -110,12 +101,19 @@ jobs:
           source: .env
           target: /root/.env
           strip_components: 0
-        
+
+      - name: Deploy to Droplet
+        run: |
+            ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} "
+            docker stop ${{ env.CONTAINER_NAME }} || true &&
+            docker rm ${{ env.CONTAINER_NAME }} || true &&
+            docker pull ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }} &&
+            docker run -d --name ${{ env.CONTAINER_NAME }} -p ${{ env.APP_PORT }}:${{ env.APP_PORT }} --env-file /root/.env ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }}"
+
       - name: Setup Systemd Service
         run: |
           ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} "
             cat << EOF > /etc/systemd/system/${{ env.CONTAINER_NAME }}.service
-
             [Unit]
             Description=EMR API Container
             After=network.target docker.service
@@ -143,7 +141,7 @@ jobs:
                     server_name ${{ env.DOMAIN_NAME }};
 
                     location / {
-                        proxy_pass http://localhost:5000;
+                        proxy_pass http://localhost:${{ env.APP_PORT }};
                         proxy_set_header Host \$host;
                         proxy_set_header X-Real-IP \$remote_addr;
                         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -158,5 +156,4 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} "
             certbot --nginx -d ${{ env.DOMAIN_NAME }} --non-interactive --agree-tos -m your-email@example.com
-          "
-
+            "
