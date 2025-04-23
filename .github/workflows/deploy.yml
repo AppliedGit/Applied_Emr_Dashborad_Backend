@@ -102,7 +102,7 @@ jobs:
           
           
       - name: Transfer .env file to Droplet
-        uses: appleboy/scp-action@v1.0.0
+        uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ env.DROPLET_IP }}
           username: root
