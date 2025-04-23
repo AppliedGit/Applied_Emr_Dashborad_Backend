@@ -105,6 +105,8 @@ jobs:
       - name: Deploy to Droplet and Setup Systemd Service
         run: |
           ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} "
+            docker pull ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }}
+            
             cat << EOF > /etc/systemd/system/${{ env.CONTAINER_NAME }}.service
             [Unit]
             Description=EMR API Container
