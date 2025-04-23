@@ -9,15 +9,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     curl \
-    && pip install --no-cache-dir -r requirements.txt \
-    && apt-get purge -y --auto-remove build-essential curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Copy requirements FIRST to leverage Docker cache
 COPY requirements.txt .
+
+# Install Python dependencies
 RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
-# Copy project files
+# Clean up build tools
+RUN apt-get purge -y --auto-remove build-essential curl
+
+# Copy application code
 COPY . .
 
 # Expose Flask port
