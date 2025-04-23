@@ -46,7 +46,7 @@ jobs:
             echo "Droplet exists: $DROPLET_ID"
           fi
 
-          DROPLET_IP=$(doctl compute droplet get $DROPLET_ID --format 'networks.v4.0.ip_address' --no-header)
+          DROPLET_IP=$(doctl compute droplet get $DROPLET_ID --format PublicIPv4 --no-header)
           echo "DROPLET_IP=$DROPLET_IP" >> $GITHUB_ENV
           echo "DROPLET_ID=$DROPLET_ID" >> $GITHUB_ENV
 
