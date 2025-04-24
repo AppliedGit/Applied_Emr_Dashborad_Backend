@@ -17,7 +17,7 @@ env:
   SSH_PORT: 22
   APP_PORT: 5000
   CONTAINER_NAME: emrapicontainer
-  DOMAIN_NAME: emrapi.aaspl.net
+  DOMAIN_NAME: dcrmapi.aaspl.net
   RESERVED_IP: 174.138.120.99
 
 jobs:
@@ -146,33 +146,33 @@ jobs:
             systemctl start ${{ env.CONTAINER_NAME }}
           "
 
-      # - name: Setup Nginx Reverse Proxy
-      #   run: |
-      #     ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} '
-      #       cat << "EOF" > /etc/nginx/sites-available/emrapi
-      #       server {
-      #           listen 80;
-      #           server_name '"${{ env.DOMAIN_NAME }}"';
+      - name: Setup Nginx Reverse Proxy
+        run: |
+          ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} '
+            cat << "EOF" > /etc/nginx/sites-available/emrapi
+            server {
+                listen 80;
+                server_name '"${{ env.DOMAIN_NAME }}"';
 
-      #           location / {
-      #               proxy_pass http://localhost:'"${{ env.APP_PORT }}"';
-      #               proxy_set_header Host \$host;
-      #               proxy_set_header X-Real-IP \$remote_addr;
-      #               proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-      #               proxy_set_header X-Forwarded-Proto \$scheme;
-      #               proxy_http_version 1.1;
-      #               proxy_set_header Connection "";
-      #           }
-      #       }
-      #       EOF
-      #       rm -f /etc/nginx/sites-enabled/default
-      #       ln -sf /etc/nginx/sites-available/emrapi /etc/nginx/sites-enabled/
-      #       nginx -t || { echo "Nginx config test failed"; exit 1; }
-      #       systemctl restart nginx
-      #     '
+                location / {
+                    proxy_pass http://localhost:'"${{ env.APP_PORT }}"';
+                    proxy_set_header Host \$host;
+                    proxy_set_header X-Real-IP \$remote_addr;
+                    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Proto \$scheme;
+                    proxy_http_version 1.1;
+                    proxy_set_header Connection "";
+                }
+            }
+            EOF
+            rm -f /etc/nginx/sites-enabled/default
+            ln -sf /etc/nginx/sites-available/emrapi /etc/nginx/sites-enabled/
+            nginx -t || { echo "Nginx config test failed"; exit 1; }
+            systemctl restart nginx
+          '
 
-      # - name: Setup Certbot (HTTPS)
-      #   run: |
-      #     ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} "
-      #       certbot --nginx -d ${{ env.DOMAIN_NAME }} --non-interactive --agree-tos -m appliedsw@aaspl.net
-      #     "
+      - name: Setup Certbot (HTTPS)
+        run: |
+          ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} "
+            certbot --nginx -d ${{ env.DOMAIN_NAME }} --non-interactive --agree-tos -m appliedsw@aaspl.net
+          "
