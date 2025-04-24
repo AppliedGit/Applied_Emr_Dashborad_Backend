@@ -163,7 +163,7 @@ jobs:
 
       - name: Set up Nginx reverse proxy
         run: |
-            ssh -o StrictHostKeyChecking=no -i root@${{ env.DROPLET_IP }} << EOF
+            ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} << EOF
               # Set up Nginx reverse proxy
               sudo bash -c "cat > /etc/nginx/sites-available/${CONTAINER_NAME}" <<'EOL'
               server {
