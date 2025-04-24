@@ -184,7 +184,7 @@ jobs:
 
       - name: Enable Nginx site and restart (Enable HTTPS)
         run: |
-              ssh -o StrictHostKeyChecking=no -i root@${{ env.DROPLET_IP }} << EOF
+              ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} << EOF
               # Enable Nginx site and restart
               sudo rm /etc/nginx/sites-enabled/default
               sudo ln -s /etc/nginx/sites-available/${CONTAINER_NAME} /etc/nginx/sites-enabled/
