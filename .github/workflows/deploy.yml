@@ -144,7 +144,7 @@ jobs:
             docker system prune -af --volumes || true
             docker pull $DOCKER_REGISTRY/$DOCKER_IMAGE:$IMAGE_TAG
 
-            cat <<SERVICE > /etc/systemd/system/$CONTAINER_NAME.service
+            sudo tee /etc/systemd/system/$CONTAINER_NAME.service > /dev/null << SERVICE
             [Unit]
             Description=$CONTAINER_NAME Container
             After=network.target docker.service
