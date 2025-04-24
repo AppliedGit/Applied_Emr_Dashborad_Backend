@@ -163,15 +163,14 @@ jobs:
 
       - name: Set up Nginx reverse proxy
         run: |
-          ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} <<'EOF'
-            # Set up Nginx reverse proxy
-            sudo bash -c "cat > /etc/nginx/sites-available/${{ env.CONTAINER_NAME }}" <<'EOL'
+          ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} <<EOF
+            DOMAIN_NAME=${{ env.DOMAIN_NAME }}
+            CONTAINER_NAME=${{ env.CONTAINER_NAME }}
+            sudo bash -c "cat > /etc/nginx/sites-available/\$CONTAINER_NAME" <<EOL
             server {
                 listen 80;
-                server_name ${{
-                  env.DOMAIN_NAME
-                }};
-            
+                server_name \$DOMAIN_NAME;
+
                 location / {
                     proxy_pass http://localhost:5000;
                     proxy_set_header Host \$host;
@@ -181,7 +180,8 @@ jobs:
                 }
             }
             EOL
-          EOF
+            EOF
+
 
       - name: Enable Nginx site and restart
         run: |
