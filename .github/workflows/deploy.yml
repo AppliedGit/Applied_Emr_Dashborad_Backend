@@ -53,9 +53,20 @@ jobs:
 
       - name: Assign Reserved IP to Droplet
         run: |
-          echo "Assigning reserved IP..."
-          doctl compute reserved-ip-action unassign ${{ env.RESERVED_IP }} || echo "No previous assignment"
-          doctl compute reserved-ip-action assign ${{ env.RESERVED_IP }} ${{ env.DROPLET_ID }}
+          echo "Checking existing assignment..."
+          ASSIGNED_DROPLET=$(doctl compute reserved-ip get ${{ env.RESERVED_IP }} --format DropletID --no-header || echo "")
+          
+          if [ "$ASSIGNED_DROPLET" != "${{ env.DROPLET_ID }}" ]; then
+            echo "Unassigning reserved IP from old Droplet (if any)..."
+            doctl compute reserved-ip-action unassign ${{ env.RESERVED_IP }} || echo "No unassign needed"
+            sleep 10
+
+            echo "Assigning reserved IP to current Droplet..."
+            doctl compute reserved-ip-action assign ${{ env.RESERVED_IP }} ${{ env.DROPLET_ID }}
+          else
+            echo "Reserved IP is already assigned to current Droplet."
+          fi
+
 
       - name: Configure SSH
         uses: webfactory/ssh-agent@v0.8.0
