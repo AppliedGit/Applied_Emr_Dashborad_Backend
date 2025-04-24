@@ -85,6 +85,21 @@ jobs:
       - name: Docker Login to DigitalOcean Container Registry
         run: echo "${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}" | docker login registry.digitalocean.com -u doctl --password-stdin
 
+      - name: Delete old images from DigitalOcean Registry
+        run: |
+          echo "Deleting old images from the registry..."
+          # List images in the registry
+          IMAGES=$(doctl registry repository list ${{ env.DOCKER_REGISTRY }} --format Name --no-header)
+
+          # Loop through the images and delete older ones (example logic, you can adjust to your needs)
+          for IMAGE in $IMAGES; do
+            # Example: delete images with a specific prefix or older than a certain date
+            if [[ "$IMAGE" == "your_image_prefix"* ]]; then
+              echo "Deleting image: $IMAGE"
+              doctl registry repository delete ${{ env.DOCKER_REGISTRY }}/$IMAGE --force
+            fi
+          done
+
       - name: Build and Push Docker Image
         run: |
           IMAGE_TAG=${{ github.sha }}
@@ -149,21 +164,22 @@ jobs:
       - name: Set up Nginx reverse proxy
         run: |
             ssh -o StrictHostKeyChecking=no -i root@${{ env.DROPLET_IP }} << EOF
-            # Set up Nginx reverse proxy
-            sudo bash -c "cat > /etc/nginx/sites-available/${CONTAINER_NAME}" <<'EOL'
-            server {
-                listen 80;
-                server_name '"${{ env.DOMAIN_NAME }}"';
-            
-                location / {
-                    proxy_pass http://localhost:5000;
-                    proxy_set_header Host \$host;
-                    proxy_set_header X-Real-IP \$remote_addr;
-                    proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-                    proxy_set_header X-Forwarded-Proto \$scheme;
-                }
-            }
-            EOL
+              # Set up Nginx reverse proxy
+              sudo bash -c "cat > /etc/nginx/sites-available/${CONTAINER_NAME}" <<'EOL'
+              server {
+                  listen 80;
+                  server_name '"${{ env.DOMAIN_NAME }}"';
+              
+                  location / {
+                      proxy_pass http://localhost:5000;
+                      proxy_set_header Host \$host;
+                      proxy_set_header X-Real-IP \$remote_addr;
+                      proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+                      proxy_set_header X-Forwarded-Proto \$scheme;
+                  }
+              }
+              EOL
+            EOF
             
 
       - name: Enable Nginx site and restart (Enable HTTPS)
