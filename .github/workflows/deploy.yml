@@ -134,36 +134,42 @@ jobs:
 
       - name: Deploy to Droplet and Setup Systemd Service
         run: |
-          ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} "
+          ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} << EOF
+            CONTAINER_NAME=${{ env.CONTAINER_NAME }}
+            IMAGE_TAG=${{ env.IMAGE_TAG }}
+            DOCKER_REGISTRY=${{ env.DOCKER_REGISTRY }}
+            DOCKER_IMAGE=${{ env.DOCKER_IMAGE }}
+
             echo '${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}' | docker login registry.digitalocean.com -u doctl --password-stdin
             docker system prune -af --volumes || true
-            docker pull ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }}
+            docker pull $DOCKER_REGISTRY/$DOCKER_IMAGE:$IMAGE_TAG
 
-            sudo tee /etc/systemd/system/$CONTAINER_NAME.service > /dev/null << SERVICE
+            cat <<SERVICE > /etc/systemd/system/$CONTAINER_NAME.service
             [Unit]
-            Description=ConsumeWise API Container 
+            Description=$CONTAINER_NAME Container
             After=network.target docker.service
             Requires=docker.service
 
             [Service]
             Restart=always
-            ExecStartPre=-/usr/bin/docker stop ${CONTAINER_NAME} 
-            ExecStartPre=-/usr/bin/docker rm ${CONTAINER_NAME} 
-            ExecStart=/usr/bin/docker run --rm --name ${CONTAINER_NAME} --env-file /home/ubuntu/.env  -p 5000:5000 ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
-            ExecStop=/usr/bin/docker stop ${CONTAINER_NAME}
+            ExecStartPre=-/usr/bin/docker stop $CONTAINER_NAME
+            ExecStartPre=-/usr/bin/docker rm $CONTAINER_NAME
+            ExecStart=/usr/bin/docker run --rm --name $CONTAINER_NAME --env-file /root/.env/.env -p 5000:5000 $DOCKER_REGISTRY/$DOCKER_IMAGE:$IMAGE_TAG
+            ExecStop=/usr/bin/docker stop $CONTAINER_NAME
 
             [Install]
             WantedBy=multi-user.target
             SERVICE
+            
 
-      - name: Enable systemd service on Droplet
+      - name: Enable and Start systemd Service
         run: |
-          ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} << EOF
-          # Start systemd service
-          sudo systemctl daemon-reload
-          sudo systemctl enable ${CONTAINER_NAME}
-          sudo systemctl start ${CONTAINER_NAME}
-
+          ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} <<'EOF'
+            CONTAINER_NAME=${{ env.CONTAINER_NAME }}
+            systemctl daemon-reload
+            systemctl enable $CONTAINER_NAME
+            systemctl restart $CONTAINER_NAME
+            EOF
 
       - name: Set up Nginx reverse proxy
         run: |
