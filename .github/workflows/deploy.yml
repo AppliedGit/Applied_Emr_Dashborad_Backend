@@ -94,11 +94,11 @@ jobs:
 
       - name: Create .env file
         run: |
-          echo "${{ secrets.DATABASE }}" > .env
           echo "MYSQL_HOST=${{ secrets.MYSQL_HOST }}" >> .env
           echo "MYSQL_USER=${{ secrets.MYSQL_USER }}" >> .env
           echo "MYSQL_PASSWORD=${{ secrets.MYSQL_PASSWORD }}" >> .env
           echo "MYSQL_DB=${{ secrets.MYSQL_DB }}" >> .env
+          echo "MYSQL_PORT=${{ secrets.MYSQL_PORT }}" >> .env
           echo "EXP_TIME=${{ secrets.EXP_TIME }}" >> .env
           echo "JWT_SECRET_KEY=${{ secrets.JWT_SECRET_KEY }}" >> .env
           echo "S3_ACCESS_KEY=${{ secrets.S3_ACCESS_KEY }}" >> .env
@@ -146,30 +146,33 @@ jobs:
             systemctl start ${{ env.CONTAINER_NAME }}
           "
 
-      - name: Setup Nginx Reverse Proxy
+      - name: Set up Nginx reverse proxy
         run: |
-          ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} '
-            cat << "EOF" > /etc/nginx/sites-available/emrapi
+            ssh -o StrictHostKeyChecking=no -i root@${{ env.DROPLET_IP }} << EOF
+            # Set up Nginx reverse proxy
+            sudo bash -c "cat > /etc/nginx/sites-available/${CONTAINER_NAME}" <<'EOL'
             server {
                 listen 80;
                 server_name '"${{ env.DOMAIN_NAME }}"';
-
+            
                 location / {
-                    proxy_pass http://localhost:'"${{ env.APP_PORT }}"';
+                    proxy_pass http://localhost:5000;
                     proxy_set_header Host \$host;
                     proxy_set_header X-Real-IP \$remote_addr;
                     proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
                     proxy_set_header X-Forwarded-Proto \$scheme;
-                    proxy_http_version 1.1;
-                    proxy_set_header Connection "";
                 }
             }
-            EOF
-            rm -f /etc/nginx/sites-enabled/default
-            ln -sf /etc/nginx/sites-available/emrapi /etc/nginx/sites-enabled/
-            nginx -t || { echo "Nginx config test failed"; exit 1; }
-            systemctl restart nginx
-          '
+            EOL
+            
+
+      - name: Enable Nginx site and restart (Enable HTTPS)
+        run: |
+              ssh -o StrictHostKeyChecking=no -i root@${{ env.DROPLET_IP }} << EOF
+              # Enable Nginx site and restart
+              sudo rm /etc/nginx/sites-enabled/default
+              sudo ln -s /etc/nginx/sites-available/${CONTAINER_NAME} /etc/nginx/sites-enabled/
+              sudo nginx -t && sudo systemctl restart nginx
 
       - name: Setup Certbot (HTTPS)
         run: |
