@@ -139,27 +139,31 @@ jobs:
             docker system prune -af --volumes || true
             docker pull ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }}
 
-            cat << EOF > /etc/systemd/system/${{ env.CONTAINER_NAME }}.service
+            sudo tee /etc/systemd/system/$CONTAINER_NAME.service > /dev/null << SERVICE
             [Unit]
-            Description=EMR API Container
+            Description=ConsumeWise API Container 
             After=network.target docker.service
             Requires=docker.service
 
             [Service]
             Restart=always
-            ExecStartPre=-/usr/bin/docker stop ${{ env.CONTAINER_NAME }}
-            ExecStartPre=-/usr/bin/docker rm ${{ env.CONTAINER_NAME }}
-            ExecStart=/usr/bin/docker run --rm --name ${{ env.CONTAINER_NAME }} --env-file /root/.env -p ${{ env.APP_PORT }}:${{ env.APP_PORT }} ${{ env.DOCKER_REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ env.IMAGE_TAG }}
-            ExecStop=/usr/bin/docker stop ${{ env.CONTAINER_NAME }}
+            ExecStartPre=-/usr/bin/docker stop ${CONTAINER_NAME} 
+            ExecStartPre=-/usr/bin/docker rm ${CONTAINER_NAME} 
+            ExecStart=/usr/bin/docker run --rm --name ${CONTAINER_NAME} --env-file /home/ubuntu/.env  -p 5000:5000 ${{ steps.login-ecr.outputs.registry }}/$ECR_REPOSITORY:$IMAGE_TAG
+            ExecStop=/usr/bin/docker stop ${CONTAINER_NAME}
 
             [Install]
             WantedBy=multi-user.target
-            EOF
+            SERVICE
 
-            systemctl daemon-reload
-            systemctl enable ${{ env.CONTAINER_NAME }}
-            systemctl start ${{ env.CONTAINER_NAME }}
-          "
+      - name: Enable systemd service on Droplet
+        run: |
+          ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} << EOF
+          # Start systemd service
+          sudo systemctl daemon-reload
+          sudo systemctl enable ${CONTAINER_NAME}
+          sudo systemctl start ${CONTAINER_NAME}
+
 
       - name: Set up Nginx reverse proxy
         run: |
