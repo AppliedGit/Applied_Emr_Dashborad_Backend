@@ -54,6 +54,7 @@ jobs:
       - name: Assign Reserved IP to Droplet
         run: |
           echo "Assigning reserved IP..."
+          doctl compute reserved-ip-action unassign ${{ env.RESERVED_IP }} || echo "No previous assignment"
           doctl compute reserved-ip-action assign ${{ env.RESERVED_IP }} ${{ env.DROPLET_ID }}
 
       - name: Configure SSH
