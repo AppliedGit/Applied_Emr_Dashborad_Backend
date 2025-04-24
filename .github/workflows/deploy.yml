@@ -169,7 +169,6 @@ jobs:
             systemctl daemon-reload
             systemctl enable $CONTAINER_NAME
             systemctl restart $CONTAINER_NAME
-            EOF
 
       - name: Set up Nginx reverse proxy
         run: |

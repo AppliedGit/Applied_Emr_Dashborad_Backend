@@ -72,7 +72,6 @@ def get_user_details():
     pass
 
 
-@auth_bp.route('/home',methods = ['GET'])
-@Authentication.token_required
+@auth_bp.route('/',methods = ['GET'])
 async def home():
     return "Welcome to DCRM"
