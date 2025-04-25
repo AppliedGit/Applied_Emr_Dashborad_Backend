@@ -136,16 +136,16 @@ class S3:
             contents = page.get("Contents", [])
             for obj in contents:
                 key = obj["Key"]
-                if key != prefix:  # skip the folder itself
+                if key != prefix:  
                     all_keys.append(key)
 
         root = self.build_folder_tree(all_keys)
 
-        # Get user info once
+        
         response = current_app.authentication.get_username(request)
         user_name = response.get("username")
 
-        # Add status to all model files in the tree
+       
         await self.add_model_status_to_folders(root, user_name)
 
         return root["children"]
@@ -185,7 +185,7 @@ class S3:
                 "path": next_path + ("/" if is_folder else "")
             }
 
-            # Add CDN link if it's a file
+            
             if node_type == "file":
                 new_node["cdn_url"] = f"{cdn_base_url}/{next_path}"
 

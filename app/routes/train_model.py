@@ -163,6 +163,16 @@ async def train_model():
     # train_dir = f"{base_path}train"
     # val_dir = f"{base_path}val"
     base_path = f"{base_path.split('/')[0]}/"
+    temp_base_path = base_path.split('/')[0]
+    response = current_app.authentication.get_username(request)
+    user_name = response.get('username')
+    query = "SELECT tr.status FROM train_model AS tr LEFT JOIN users AS us ON tr.user_id = us.user_id WHERE us.user_name = %s AND tr.model_name = %s"
+    value = (user_name, temp_base_path)
+    res = current_app.database.execute_query(query,value)
+
+    if res['data']:
+        if res['data'][0]['status'] == 'y':
+            return api_json_response_format(True, "Model already trained", 200, {})
 
     try: 
         class_names = await s3.get_dirs(base_path, "train/")
@@ -239,8 +249,8 @@ async def train_model():
         val_dataset.samples = [(path, custom_class_to_idx[os.path.basename(os.path.dirname(path))]) for path, _ in val_dataset.samples]
         
 
-        train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-        val_loader = DataLoader(val_dataset, batch_size=32)
+        train_loader = DataLoader(train_dataset, batch_size=5, shuffle=True)
+        val_loader = DataLoader(val_dataset, batch_size=5)
 
         model = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
         model.fc = nn.Linear(model.fc.in_features, num_classes)
@@ -291,14 +301,13 @@ async def train_model():
         elapsed = end_time - start_time
         print(f"Elapsed time: {elapsed:.4f} seconds")
 
-        temp_base_path = base_path.split('/')[0]
+        
         pth_file_name = f"{temp_base_path}_graph_classifier.pth"
         pth_file_path = tmp_dir+"/"+pth_file_name
         torch.save(best_model, pth_file_path)
 
         print("Training completed. Best model saved.")
-        response = current_app.authentication.get_username(request)
-        user_name = response.get('username')
+        
         status = 'y'
         query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
         value = (status, temp_base_path, user_name)
@@ -340,7 +349,7 @@ async def start_predict():
         excel_file = request.files.get('excel_file')
 
         if not folder_name:
-            return api_json_response_format(False, "Folder name not found.", 404, {})
+            return api_json_response_format(False, "Folder not found.", 404, {})
 
         temp_folder_name = folder_name.split('/')[0]
         json_file_path = f"{temp_folder_name}/class_to_idx.json"
@@ -520,7 +529,7 @@ async def correct_predictions():
         if user_response == "no" and class_name:
             response = await s3.upload_file(class_name, images, image_class_name=image_class_name)
 
-        if response.get('sucsess'):
+        if response.get('success'):
             response = current_app.authentication.get_username(request)
             user_name = response.get('username')
             status = 'n'
@@ -544,9 +553,4 @@ async def correct_predictions():
 
 
 
-    
 
-
-
-
-    
