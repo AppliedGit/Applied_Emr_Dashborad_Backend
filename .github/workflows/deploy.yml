@@ -9,7 +9,7 @@ on:
 
 env:
   DIGITALOCEAN_REGION: blr1
-  DROPLET_SIZE: m-2vcpu-16gb
+  DROPLET_SIZE: s-2vcpu-8gb-160gb-intel
   DROPLET_IMAGE: ubuntu-22-04-x64
   DROPLET_NAME: emr-droplet
   DOCKER_REGISTRY: registry.digitalocean.com/emr-repository
