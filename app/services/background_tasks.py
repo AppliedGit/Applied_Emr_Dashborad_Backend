@@ -27,31 +27,8 @@ s3 = S3()
 class BackgroundTask:
     def __init__(self, executor):        
         self.executor = executor
-
-    def mixpanel_store_events(self,distinct_id,event_name,event_properties):
-        try: 
-            if self.is_enabled_mixpanel:          
-                self.mp.track(distinct_id,event_name, event_properties)
-                print(f"Event {event_name} successfully stored into mixpanel for {distinct_id}.")
-        except Exception as error:
-            print("Exception in mixpanel_store_events() ",error) 
-
-    def mixpanel_store_client_profile(self,client_phoneno,client_properties):
-        try:
-            if self.is_enabled_mixpanel:         
-                self.mp.people_set(client_phoneno, client_properties, meta = {'$ignore_time' : False, '$ip' : 0})
-                print(f"Client {client_phoneno} successfully stored into mixpanel.")      
-        except Exception as error:
-            print("Exception in mixpanel_store_client_profile() ",error) 
-      
-    
-    def s3_file_upload_async(self, json_data,file_name,key_name):        
-        task_id = uuid.uuid4().hex  
-        self.executor.submit_stored(task_id, self.s3_bucket_file_upload, json_data,file_name,key_name)        
-        return task_id
     
     
-
     async def train_model_background(self, base_path, user_name):
         
         json_file_name = "class_to_idx.json"
@@ -84,7 +61,7 @@ class BackgroundTask:
                     file_like_obj.seek(0) 
 
                     
-                result = await s3.upload_file(base_path, file_like_obj, file_name=json_file_name )
+                result = await s3.upload_file(base_path, file_like_obj, file_name=json_file_name)
 
                 if result.get('success'):
                     os.remove(json_file_name)
@@ -138,8 +115,8 @@ class BackgroundTask:
             val_dataset.samples = [(path, custom_class_to_idx[os.path.basename(os.path.dirname(path))]) for path, _ in val_dataset.samples]
             
 
-            train_loader = DataLoader(train_dataset, batch_size=5, shuffle=True)
-            val_loader = DataLoader(val_dataset, batch_size=5)
+            train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+            val_loader = DataLoader(val_dataset, batch_size=32)
 
             model = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
             model.fc = nn.Linear(model.fc.in_features, num_classes)
@@ -197,14 +174,7 @@ class BackgroundTask:
 
             print("Training completed. Best model saved.")
             
-            status = 'y'
-            query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
-            value = (status, temp_base_path, user_name)
-            res = current_app.database.update_query(query,value)
-            if res['data'] > 0:
-                print("Value updated.")
-            else:
-                print(f"Error: str{res['message']}")
+            
             with open(pth_file_path, "rb") as f:
                     data = f.read()
                     file_like_obj = io.BytesIO(data)
@@ -216,8 +186,31 @@ class BackgroundTask:
 
             if not result.get("success"):
                 message = f"PTH file not uploaded. Error: {result.get('message')}"
+                
+            status = 'y'
+            query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
+            value = (status, temp_base_path, user_name)
+            res = current_app.database.update_query(query,value)
+            if res['data'] > 0:
+                print("Value updated.")
+            else:
+                print(f"Error: str{res['message']}")
 
             print(message)
+            # Clean up memory
+            vars_to_delete = [
+                "model", "train_loader", "val_loader", "train_dataset", "val_dataset",
+                "class_names", "custom_class_to_idx", "file_like_obj", "data",
+                "outputs", "preds", "labels"
+            ]
+
+            for var in vars_to_delete:
+                if var in locals():
+                    del locals()[var]
+
+            import gc
+            gc.collect()
+            torch.cuda.empty_cache()
             print("Model training completed")
 
         except Exception as e:
@@ -226,5 +219,6 @@ class BackgroundTask:
 
     def train_model_async(self,base_path,user_name):
         task_id = uuid.uuid4().hex  
-        self.executor.submit_stored(task_id, self.train_model_background, base_path, user_name)     
+        self.executor.submit_stored(task_id, self.train_model_background, base_path, user_name)  
+        print(task_id)   
         return task_id

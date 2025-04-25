@@ -46,84 +46,6 @@ class S3:
         except Exception as e:
             return api_json_response_format(False, str(e), 500, {})
 
-
-    
-    # async def list_folder(self, prefix=""):
-    #     files = []
-
-    #     paginator = s3.get_paginator("list_objects_v2")
-    #     pages = paginator.paginate(Bucket=BUCKET_NAME, Prefix=prefix)
-
-    #     all_keys = []
-    #     for page in pages:
-    #         contents = page.get("Contents", [])
-    #         for obj in contents:
-    #             key = obj["Key"]
-    #             if key != prefix:  # skip the folder itself
-    #                 all_keys.append(key)
-
-    #     # Build tree from keys
-    #     return self.build_folder_tree(all_keys)
-
-    # def build_folder_tree(self, s3_keys):
-    #     root = {"name": "root", "type": "folder", "children": []}
-
-    #     # Normalize keys and remove empty ones
-    #     # s3_keys = [key.strip("/") for key in s3_keys if key.strip()]
-    #     all_prefixes = set()
-
-    #     # Build a set of all folder-like prefixes
-    #     for key in s3_keys:
-    #         parts = key.split("/")
-    #         for i in range(1, len(parts)):
-    #             all_prefixes.add("/".join(parts[:i]))
-
-    #     def insert_path(path_parts, current_node, current_path):
-    #         if not path_parts:
-    #             return
-
-    #         part = path_parts[0]
-    #         if part == "":
-    #             insert_path(path_parts[1:], current_node, current_path)
-    #             return
-
-    #         next_path = f"{current_path}/{part}" if current_path else part
-    #         is_folder = next_path in all_prefixes
-    #         node_type = "folder" if is_folder else "file"
-
-    #         for child in current_node["children"]:
-    #             if child["name"] == part and child["type"] == node_type:
-    #                 insert_path(path_parts[1:], child, next_path)
-    #                 return
-
-    #         new_node = {
-    #             "name": part,
-    #             "type": node_type,
-    #             "path": next_path + ("/" if is_folder else "")
-    #         }
-
-
-    #         if node_type == "folder":
-    #             new_node["children"] = []
-    #             insert_path(path_parts[1:], new_node, next_path)
-
-    #         current_node["children"].append(new_node)
-
-    #     for key in s3_keys:
-    #         parts = key.split("/")
-    #         insert_path(parts, root, "")
-
-    #     model_name = folder_path.split('/'[0])
-    #     response = current_app.authentication.get_username(request)
-    #     user_name = response.get('username')
-    #     status = 'n'
-    #     query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
-    #     value = (status, model_name, user_name)
-        
-    #     res = current_app.database.execute_query(query,value)
-
-    #     root["children"]["status"] = status
-    #     return root["children"]
     
     async def list_folder(self, request, prefix="", ):
         files = []
@@ -214,7 +136,7 @@ class S3:
                 """
                 value = (model_name, user_name)
                 result = current_app.database.execute_query(query, value)
-                print(f"[*]  result: {result}")
+
                 if result["data"]:
                     node["status"] = result["data"][0]["status"] if result.get('data') else "n"
                 else:

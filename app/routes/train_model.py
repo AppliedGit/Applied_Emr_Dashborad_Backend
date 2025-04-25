@@ -440,6 +440,8 @@ async def start_predict():
         # Download model + json from S3
         await s3.download_folder(temp_folder_name, os.path.join(tmp_dir, temp_folder_name))
 
+        print("Download completed")
+
         local_json_path = os.path.join(tmp_dir, json_file_path)
         local_pth_path = os.path.join(tmp_dir, pth_file_path)
         base_path = os.path.join(tmp_dir, temp_folder_name)
@@ -479,7 +481,7 @@ async def start_predict():
         if not image_files:
             return api_json_response_format(False, "No valid image files found in uploaded data.", 404, {})
 
-        results = {}
+        results = []
         transition = None
         transition_output = None  
 
@@ -508,19 +510,19 @@ async def start_predict():
             image_path = os.path.join(upload_path, filename)
             try:
                 pred_class, confidence = predict_image(image_path)
-                results = {
+                results.append({
                     "filename": filename,
                     "predicted_class": pred_class,
                     "confidence": confidence,
                     "corrected": False,
                     "transition": transition,
                     "output": transition_output
-                }
+                })
             except Exception as e:
-                results= {
+                results.append({
                     "filename": filename,
                     "error": str(e)
-                }
+                })
 
         return api_json_response_format(True, "Prediction completed", 200, {"results": results})
 
@@ -584,6 +586,21 @@ async def correct_predictions():
     except Exception as e:
         return api_json_response_format(False, f"Error: {str(e)}", 500, {})
 
+@train_bp.route('/task_status', methods=['POST'])
+@Authentication.token_required
+def get_task_status():
+    data = request.get_json()
+    task_id = data.get('task_id')
+    future = current_app.background_runner.executor.futures.result(task_id)
+    if not future:
+        return jsonify({"status": "unknown", "message": "Task ID not found"}), 404
 
+    if future.done():
+        try:
+            result = future.result()
+            return jsonify({"status": "done", "result": result})
+        except Exception as e:
+            return jsonify({"status": "failed", "error": str(e)})
+    return jsonify({"status": "running"})
 
 
