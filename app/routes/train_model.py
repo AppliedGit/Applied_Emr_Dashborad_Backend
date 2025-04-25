@@ -344,7 +344,7 @@ async def train_model():
 async def start_predict():
     try:
         folder_name = request.form.get('folder_name')
-        load_model = request.form.get('load_model')
+        # load_model = request.form.get('load_model')
         uploaded_files = request.files.getlist('images')
         excel_file = request.files.get('excel_file')
 
@@ -369,127 +369,125 @@ async def start_predict():
 
         
       
-        if load_model:
-            # Check if model files exist in S3
-            is_folder_exist = await s3.get_dirs(folder_name, check=True)
-            is_json_exist = await s3.get_dirs(json_file_path, type="file")
-            is_pth_exist = await s3.get_dirs(pth_file_path, type="file")
+       
+        # Check if model files exist in S3
+        is_folder_exist = await s3.get_dirs(folder_name, check=True)
+        is_json_exist = await s3.get_dirs(json_file_path, type="file")
+        is_pth_exist = await s3.get_dirs(pth_file_path, type="file")
 
-            if not is_folder_exist:
-                return api_json_response_format(False, "Folder path not found.", 404, {})
-            if not is_json_exist:
-                return api_json_response_format(False, "Class to idx JSON file not found.", 404, {})
-            if not is_pth_exist:
-                return api_json_response_format(False, "PTH model file not found.", 404, {})
+        if not is_folder_exist:
+            return api_json_response_format(False, "Folder path not found.", 404, {})
+        if not is_json_exist:
+            return api_json_response_format(False, "Class to idx JSON file not found.", 404, {})
+        if not is_pth_exist:
+            return api_json_response_format(False, "PTH model file not found.", 404, {})
 
-            # Setup temp directory
-            tmp_dir = 'predict'
-            if os.path.exists(tmp_dir):
-                shutil.rmtree(tmp_dir)
-            os.makedirs(tmp_dir, exist_ok=True)
+        # Setup temp directory
+        tmp_dir = 'predict'
+        if os.path.exists(tmp_dir):
+            shutil.rmtree(tmp_dir)
+        os.makedirs(tmp_dir, exist_ok=True)
 
-            # Save uploaded files to temp folder
-            upload_path = os.path.join(tmp_dir, "uploaded_images")
-            os.makedirs(upload_path, exist_ok=True)
-            supported_exts = ('.jpg', '.jpeg', '.png', '.bmp')
-            for file in uploaded_files:
-                if file.filename.lower().endswith(supported_exts):
-                    filename = secure_filename(file.filename)
-                    file.save(os.path.join(upload_path, filename))
+        # Save uploaded files to temp folder
+        upload_path = os.path.join(tmp_dir, "uploaded_images")
+        os.makedirs(upload_path, exist_ok=True)
+        supported_exts = ('.jpg', '.jpeg', '.png', '.bmp')
+        for file in uploaded_files:
+            if file.filename.lower().endswith(supported_exts):
+                filename = secure_filename(file.filename)
+                file.save(os.path.join(upload_path, filename))
 
-            # Download model + json from S3
-            await s3.download_folder(temp_folder_name, os.path.join(tmp_dir, temp_folder_name))
+        # Download model + json from S3
+        await s3.download_folder(temp_folder_name, os.path.join(tmp_dir, temp_folder_name))
 
-            local_json_path = os.path.join(tmp_dir, json_file_path)
-            local_pth_path = os.path.join(tmp_dir, pth_file_path)
-            base_path = os.path.join(tmp_dir, temp_folder_name)
+        local_json_path = os.path.join(tmp_dir, json_file_path)
+        local_pth_path = os.path.join(tmp_dir, pth_file_path)
+        base_path = os.path.join(tmp_dir, temp_folder_name)
 
-            # Load class mappings
-            with open(local_json_path, 'r') as f:
-                class_to_idx = json.load(f)
-            idx_to_class = {v: k for k, v in class_to_idx.items()}
-            class_names = [idx_to_class[i] for i in sorted(idx_to_class)]
+        # Load class mappings
+        with open(local_json_path, 'r') as f:
+            class_to_idx = json.load(f)
+        idx_to_class = {v: k for k, v in class_to_idx.items()}
+        class_names = [idx_to_class[i] for i in sorted(idx_to_class)]
 
-            # Load model
-            device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-            model = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
-            model.fc = nn.Linear(model.fc.in_features, len(class_names))
-            model.load_state_dict(torch.load(local_pth_path, map_location=device))
-            model = model.to(device)
-            model.eval()
+        # Load model
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
+        model.fc = nn.Linear(model.fc.in_features, len(class_names))
+        model.load_state_dict(torch.load(local_pth_path, map_location=device))
+        model = model.to(device)
+        model.eval()
 
-            transform = transforms.Compose([
-                transforms.Resize((224, 224)),
-                transforms.ToTensor(),
-                transforms.Normalize([0.485, 0.456, 0.406],
-                                     [0.229, 0.224, 0.225])
-            ])
+        transform = transforms.Compose([
+            transforms.Resize((224, 224)),
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406],
+                                    [0.229, 0.224, 0.225])
+        ])
 
-            def predict_image(image_path):
-                image = Image.open(image_path).convert("RGB")
-                input_tensor = transform(image).unsqueeze(0).to(device)
-                with torch.no_grad():
-                    output = model(input_tensor)
-                    probabilities = torch.softmax(output, dim=1)
-                    confidence, predicted = torch.max(probabilities, 1)
-                return class_names[predicted.item()], confidence.item() * 100
+        def predict_image(image_path):
+            image = Image.open(image_path).convert("RGB")
+            input_tensor = transform(image).unsqueeze(0).to(device)
+            with torch.no_grad():
+                output = model(input_tensor)
+                probabilities = torch.softmax(output, dim=1)
+                confidence, predicted = torch.max(probabilities, 1)
+            return class_names[predicted.item()], confidence.item() * 100
 
-            # Predict uploaded images
-            image_files = [f for f in os.listdir(upload_path) if f.lower().endswith(supported_exts)]
-            if not image_files:
-                return api_json_response_format(False, "No valid image files found in uploaded data.", 404, {})
+        # Predict uploaded images
+        image_files = [f for f in os.listdir(upload_path) if f.lower().endswith(supported_exts)]
+        if not image_files:
+            return api_json_response_format(False, "No valid image files found in uploaded data.", 404, {})
 
-            results = []
-            transition = None
-            transition_output = None  
+        results = []
+        transition = None
+        transition_output = None  
 
-            transition_col = next((col for col in excel.columns if "transition time" in str(col).lower()), None)
+        transition_col = next((col for col in excel.columns if "transition time" in str(col).lower()), None)
 
-            if transition_col:
-                result = excel[excel[transition_col] > 60]
-                if result.empty:
-                    print("All transition times are ≤ 60 ms.")
-                    transition = "All transition times are ≤ 60 ms."
-                else:
-                    print("\nTransition times > 60 ms:")
-                    if "Tap changer transition" in excel.columns:
-                        transition_output = result[[transition_col, "Tap changer transition"]].to_string(index=False)
-                    else:
-                        transition_output = result[[transition_col]].to_string(index=False)
-
-                    print(transition_output)
-                    transition = f"{len(result)} rows with transition time > 60 ms."
+        if transition_col:
+            result = excel[excel[transition_col] > 60]
+            if result.empty:
+                print("All transition times are ≤ 60 ms.")
+                transition = "All transition times are ≤ 60 ms."
             else:
-                print("'Transition time' column not found.")
-                transition = "'Transition time' column not found."
+                print("\nTransition times > 60 ms:")
+                if "Tap changer transition" in excel.columns:
+                    transition_output = result[[transition_col, "Tap changer transition"]].to_string(index=False)
+                else:
+                    transition_output = result[[transition_col]].to_string(index=False)
 
-            results.append({
-                "transition": transition,
-                "output": transition_output
-            })
+                print(transition_output)
+                transition = f"{len(result)} rows with transition time > 60 ms."
+        else:
+            print("'Transition time' column not found.")
+            transition = "'Transition time' column not found."
+
+        results.append({
+            "transition": transition,
+            "output": transition_output
+        })
 
 
 
 
-            for filename in image_files:
-                image_path = os.path.join(upload_path, filename)
-                try:
-                    pred_class, confidence = predict_image(image_path)
-                    results.append({
-                        "filename": filename,
-                        "predicted_class": pred_class,
-                        "confidence": confidence,
-                        "corrected": False
-                    })
-                except Exception as e:
-                    results.append({
-                        "filename": filename,
-                        "error": str(e)
-                    })
+        for filename in image_files:
+            image_path = os.path.join(upload_path, filename)
+            try:
+                pred_class, confidence = predict_image(image_path)
+                results.append({
+                    "filename": filename,
+                    "predicted_class": pred_class,
+                    "confidence": confidence,
+                    "corrected": False
+                })
+            except Exception as e:
+                results.append({
+                    "filename": filename,
+                    "error": str(e)
+                })
 
-            return api_json_response_format(True, "Prediction completed", 200, {"results": results})
-
-        return api_json_response_format(False, "Invalid request", 400, {})
+        return api_json_response_format(True, "Prediction completed", 200, {"results": results})
 
     except Exception as e:
         return api_json_response_format(False, f"Server error: {str(e)}", 500, {})
