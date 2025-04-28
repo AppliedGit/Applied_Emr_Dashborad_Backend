@@ -1,6 +1,7 @@
 import os
 import shutil
 import torch
+import time
 import json
 import torch.nn as nn
 from torchvision import transforms, models
@@ -96,7 +97,7 @@ async def list_dir():
     dir_list = await s3.list_folder(request=request, prefix=prefix)
 
     if not dir_list:
-        return api_json_response_format(False, "No folders", 400, {})
+        return api_json_response_format(False, "No folders", 404, {})
     
     return api_json_response_format(True, "Folder list", 200, dir_list)
 
@@ -139,6 +140,7 @@ async def upload_image():
 
     return api_json_response_format(True, "Image uploaded successfully.", 200, {})
 
+
 @train_bp.route('/train_model', methods=['POST'])
 @Authentication.token_required
 async def train():
@@ -149,6 +151,10 @@ async def train():
     if not base_path:
         return api_json_response_format(False, "Model name not found", 404, {})
     try:
+        empty_folder = await s3.check_empty_class_folders(base_path)
+        if not empty_folder['success']:
+            return api_json_response_format(False, empty_folder['message'], empty_folder['error_code'], {})
+
         response = current_app.authentication.get_username(request)
         temp_base_path = base_path.split('/')[0]
         user_name = response.get('username')
@@ -182,7 +188,7 @@ async def train():
         return api_json_response_format(False, f"Error: {str(e)}", 500, {})
 
 @train_bp.route('/train_model_progress', methods=['GET'])
-@Authentication.token_required
+
 def get_train_model_progress():
     def generate():
         user_name = 'admin'
@@ -190,10 +196,12 @@ def get_train_model_progress():
             
             progress = current_app.background_runner.get_progress(user_name)  
             if progress:
+                progress = json.dumps(progress)
                 yield f"data: {progress}\n\n"
-            if progress and progress['epoch'] >= 100:
+            if progress and int(progress['epoch']) >= 100:
                 print(f"Epoch 100 reached for user {user_name}, stopping stream.")
                 break
+            time.sleep(5)
 
     return Response(stream_with_context(generate()), content_type='text/event-stream')
 # @train_bp.route('/train_model', methods=['POST'])
@@ -386,7 +394,7 @@ def get_train_model_progress():
 #     except Exception as e:
 #         print("Exception occured. Error : "+str(e))
 #         return api_json_response_format(False, str(e), 500, {})
-@train_bp.route("/delete", methods=['GET'])
+@train_bp.route("/delete", methods=['POST'])
 @Authentication.token_required
 async def delete():
     # Initialize a session using Amazon S3
@@ -585,10 +593,10 @@ async def correct_predictions():
         images = request.files.getlist('images')
 
         if not class_name:
-            return api_json_response_format(False, "Class name not found.", 400, {})
+            return api_json_response_format(False, "Class name not found.", 404, {})
         
         if not user_response:
-            return api_json_response_format(False, "Please select Yes or No", 400, {})
+            return api_json_response_format(False, "Please select Yes or No", 404, {})
         
         if not images:
             # if os.path.exists(tmp_dir):
@@ -599,7 +607,7 @@ async def correct_predictions():
 
                 # result = await s3.upload_file(base_path, file_like_obj, file_name=json_file_name )
 
-            return api_json_response_format(False, "Image not found.", 400, {})
+            return api_json_response_format(False, "Image not found.", 404, {})
 
         model_name = class_name.split('/')[0]
         image_class_name = class_name.split('/')[-1]

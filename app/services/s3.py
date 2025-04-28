@@ -29,10 +29,10 @@ class S3:
             if response.get('KeyCount', 0) > 0:
                 return api_json_response_format(False, f"Folder '{base_folder}' already exists.", 400, {})
 
-            # Always include a top-level folder marker
+            
             s3.put_object(Bucket=BUCKET_NAME, Key=f"{base_folder}/")
 
-            # Create each subfolder
+            # Create subfolder
             for split in splits:
                 split_path = f"{base_folder}/{split}/"
                 s3.put_object(Bucket=BUCKET_NAME, Key=split_path)
@@ -48,8 +48,17 @@ class S3:
         
     async def delete_s3_object(self, path):
         try:
-        # Delete the object
-            response = s3.delete_object(Bucket=BUCKET_NAME, Key=path)
+            temp_base_path = path.split('/')
+            if len(temp_base_path) > 1:
+
+                base_path = path.split('/')[0]
+                temp_path = path.split('/')[-1]
+
+                for split in ['train', 'val']:
+                    response = s3.delete_object(Bucket=BUCKET_NAME, Key=f"{base_path}/{split}/{temp_path}")
+            else:
+                response = s3.delete_object(Bucket=BUCKET_NAME, Key=path)
+
             return True
         except Exception as e:
             print(f"Error: {e}")
@@ -148,7 +157,7 @@ class S3:
                         SELECT user_id FROM users WHERE user_name = %s
                     )
                 """
-                value = (model_name, user_name)
+                value = (model_name, 'admin')
                 result = current_app.database.execute_query(query, value)
 
                 if result["data"]:
@@ -242,9 +251,44 @@ class S3:
 
         await asyncio.gather(*download_tasks)
 
-                    
+    async def check_empty_class_folders(self, base_folder):
+        try:
+            base_folder = base_folder.strip("/")
+            train_path = f"{base_folder}/train/"
 
-        
+            # List all class folders under train/
+            response = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix=train_path, Delimiter='/')
+
+            if 'CommonPrefixes' not in response:
+                return api_json_response_format(False, "No class folders found inside train/", 404, {})
+
+            empty_folders = []
+
+            for prefix_info in response['CommonPrefixes']:
+                class_folder_path = prefix_info['Prefix']
+
+                # Now check if any real files exist under this class folder
+                class_files_response = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix=class_folder_path)
+
+                # Check if there are files other than the folder itself
+                file_count = 0
+                for obj in class_files_response.get('Contents', []):
+                    if not obj['Key'].endswith('/'):  # Ignore folder keys
+                        file_count += 1
+
+                if file_count == 0:
+                    empty_folders.append(class_folder_path)
+
+            if empty_folders:
+                return api_json_response_format(False, "Empty folders found.", 404, {"empty_folders": empty_folders})
+            else:
+                return api_json_response_format(True, "No empty folders found.", 200, {})
+
+        except Exception as e:
+            return api_json_response_format(False, str(e), 500, {})
+                        
+
+            
 
 
 
