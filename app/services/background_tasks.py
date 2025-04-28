@@ -22,13 +22,30 @@ from werkzeug.utils import secure_filename
 import time
 import pandas as pd
 import uuid
+import asyncio
+
 s3 = S3()
 
 class BackgroundTask:
     def __init__(self, executor):        
         self.executor = executor
+        self.user_progress = {}
     
-    
+
+    async def send_progress_update(self, user_name, epoch, train_acc, val_acc):
+        # Update progress dictionary using user_id
+        self.user_progress[user_name] = {
+            'epoch': epoch,
+            'train_acc': train_acc,
+            'val_acc': val_acc
+        }
+
+    # This function retrieves the current progress for a user_id
+    def get_progress(self, user_name):
+        progress = self.user_progress.get(user_name)
+        if progress:
+            return json.dumps(progress)
+        return None
     async def train_model_background(self, base_path, user_name):
         
         json_file_name = "class_to_idx.json"
@@ -158,6 +175,7 @@ class BackgroundTask:
 
                 val_acc = accuracy_score(val_labels, val_preds) * 100
                 print(f"Epoch {epoch+1}: Train Acc={train_acc:.2f}% | Val Acc={val_acc:.2f}%")
+                await self.send_progress_update('admin', epoch+1, train_acc, val_acc)
 
                 if val_acc > best_acc:
                     best_acc = val_acc
@@ -187,7 +205,7 @@ class BackgroundTask:
             if not result.get("success"):
                 message = f"PTH file not uploaded. Error: {result.get('message')}"
                 
-            status = 'y'
+            status = 'trained'
             query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
             value = (status, temp_base_path, user_name)
             res = current_app.database.update_query(query,value)

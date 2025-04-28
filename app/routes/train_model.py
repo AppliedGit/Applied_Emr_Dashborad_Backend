@@ -1,27 +1,18 @@
 import os
 import shutil
-import random
 import torch
 import json
 import torch.nn as nn
-from torchvision import datasets, transforms, models
+from torchvision import transforms, models
 from torchvision.models import ResNet50_Weights
-from torch.utils.data import DataLoader
-from sklearn.metrics import accuracy_score
-from flask import Flask, request, Blueprint, current_app, jsonify
+from flask import  request, Blueprint, current_app, jsonify, stream_with_context, Response
 from app.utils.response import api_json_response_format
 from app.services.authentication import Authentication
 from app.services.s3 import S3
-import copy
-from functools import wraps
-import io
 from PIL import Image
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
-import time
 import pandas as pd
-from app.services.background_tasks import BackgroundTask
-from flask_executor import Executor
 
 load_dotenv()
 
@@ -73,7 +64,7 @@ async def create_class():
             print("Images uploaded successfully.")
             response = current_app.authentication.get_username(request)
             user_name = response.get('username')
-            status = 'n'
+            status = 'train'
             query = "INSERT INTO train_model (user_id, model_name, status)  SELECT user_id, %s, %s FROM users  WHERE user_name = %s;"
             value = (folder_name, status, user_name)
            
@@ -128,7 +119,7 @@ async def upload_image():
         model_name = folder_path.split('/'[0])
         response = current_app.authentication.get_username(request)
         user_name = response.get('username')
-        status = 'n'
+        status = 'train'
         query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
         value = (status, model_name, user_name)
         
@@ -147,7 +138,7 @@ async def upload_image():
     
 
     return api_json_response_format(True, "Image uploaded successfully.", 200, {})
-    
+
 @train_bp.route('/train_model', methods=['POST'])
 @Authentication.token_required
 async def train():
@@ -166,7 +157,7 @@ async def train():
         res = current_app.database.execute_query(query,value)
 
         if res['data']:
-            if res['data'][0]['status'] == 'y':
+            if res['data'][0]['status'] == 'trained':
                 return api_json_response_format(True, "Model already trained", 200, {})
 
         # Trigger the background task
@@ -174,7 +165,14 @@ async def train():
         current_app.background_runner.executor.submit(
             current_app.background_runner.train_model_async, base_path, user_name
         )
-
+        status = 'training'
+        query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
+        value = (status, temp_base_path, user_name)
+        res = current_app.database.update_query(query,value)
+        if res['data'] > 0:
+            print("Value updated.")
+        else:
+            print(f"Error: str{res['message']}")
 
         # Immediately return a response to the client
         # return jsonify({"success": True, "message": "Model training started in the background."}), 202
@@ -183,6 +181,21 @@ async def train():
     except Exception as e:
         return api_json_response_format(False, f"Error: {str(e)}", 500, {})
 
+@train_bp.route('/train_model_progress', methods=['GET'])
+@Authentication.token_required
+def get_train_model_progress():
+    def generate():
+        user_name = 'admin'
+        while True:
+            
+            progress = current_app.background_runner.get_progress(user_name)  
+            if progress:
+                yield f"data: {progress}\n\n"
+            if progress and progress['epoch'] >= 100:
+                print(f"Epoch 100 reached for user {user_name}, stopping stream.")
+                break
+
+    return Response(stream_with_context(generate()), content_type='text/event-stream')
 # @train_bp.route('/train_model', methods=['POST'])
 # @Authentication.token_required
 # async def train_model():
@@ -373,8 +386,38 @@ async def train():
 #     except Exception as e:
 #         print("Exception occured. Error : "+str(e))
 #         return api_json_response_format(False, str(e), 500, {})
+@train_bp.route("/delete", methods=['GET'])
+@Authentication.token_required
+async def delete():
+    # Initialize a session using Amazon S3
+    data = request.get_json()
+    path = data.get('path')
+    try:
+        # Delete the object
+        response = await s3.delete_s3_object(path)
+        if response == True:
+            print(f"{path} deleted successfully. Please train your model.")
 
+            response = current_app.authentication.get_username(request)
+            model_name = path.split('/')[0]
+            user_name = response.get('username')
+            status = 'train'
+            query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
+            value = (status, model_name, user_name)
+            
+            res = current_app.database.update_query(query,value)
+            if res['data'] > 0:
+                print("Database value updated.")
+            else:
+                print(f"Error: str{res['message']}")
+            return api_json_response_format(True, "Object deleted successfully.", 200, {}) 
+        else:
+            return api_json_response_format(False, str(response), 500, {})
 
+    except Exception as e:
+        print(f"Error: {e}")
+        return api_json_response_format(False, f"Error: {e}", 500, {})
+    
 @train_bp.route('/start_predict', methods=['POST'])
 @Authentication.token_required
 async def start_predict():
@@ -567,7 +610,7 @@ async def correct_predictions():
         if response.get('success'):
             response = current_app.authentication.get_username(request)
             user_name = response.get('username')
-            status = 'n'
+            status = 'train'
             query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
             value = (status, model_name, user_name)
             

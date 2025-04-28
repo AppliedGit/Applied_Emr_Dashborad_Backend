@@ -9,7 +9,7 @@ on:
 
 env:
   DIGITALOCEAN_REGION: blr1
-  DROPLET_SIZE: s-2vcpu-8gb-160gb-intel
+  DROPLET_SIZE: s-2vcpu-4gb
   DROPLET_IMAGE: ubuntu-22-04-x64
   DROPLET_NAME: emr-droplet
   DOCKER_REGISTRY: registry.digitalocean.com/emr-repository
@@ -176,7 +176,7 @@ jobs:
             # Set up Nginx reverse proxy
             sudo bash -c "cat > /etc/nginx/sites-available/${CONTAINER_NAME}" <<'EOL'
             server {
-                client_max_body_size 50M;
+                client_max_body_size 200M;
                 listen 80;
                 server_name $DOMAIN_NAME;
             

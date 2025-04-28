@@ -45,6 +45,15 @@ class S3:
         
         except Exception as e:
             return api_json_response_format(False, str(e), 500, {})
+        
+    async def delete_s3_object(self, path):
+        try:
+        # Delete the object
+            response = s3.delete_object(Bucket=BUCKET_NAME, Key=path)
+            return True
+        except Exception as e:
+            print(f"Error: {e}")
+            return str(e)
 
     
     async def list_folder(self, request, prefix="", ):
@@ -138,9 +147,9 @@ class S3:
                 result = current_app.database.execute_query(query, value)
 
                 if result["data"]:
-                    node["status"] = result["data"][0]["status"] if result.get('data') else "n"
+                    node["status"] = result["data"][0]["status"] if result.get('data') else "train"
                 else:
-                    node["status"] = 'n'
+                    node["status"] = 'train'
 
 
 
