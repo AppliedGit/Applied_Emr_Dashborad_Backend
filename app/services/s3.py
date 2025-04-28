@@ -74,6 +74,11 @@ class S3:
 
         
         response = current_app.authentication.get_username(request)
+        if isinstance(response, bytes):
+            response = response.decode('utf-8')
+        if isinstance(response, str):
+            import json
+            response = json.loads(response)
         user_name = response.get("username")
 
        
