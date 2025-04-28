@@ -196,9 +196,9 @@ def get_train_model_progress():
             
             progress = current_app.background_runner.get_progress(user_name)  
             if progress:
-                progress = json.dumps(progress)
-                yield f"data: {progress}\n\n"
-            if progress and int(progress['epoch']) >= 100:
+                data_dict = json.loads(progress)
+                yield f"data: {data_dict}\n\n"
+            if progress and int(data_dict['epoch']) >= 100:
                 print(f"Epoch 100 reached for user {user_name}, stopping stream.")
                 break
             time.sleep(5)
