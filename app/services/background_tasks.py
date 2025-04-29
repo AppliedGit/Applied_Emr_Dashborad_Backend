@@ -30,14 +30,18 @@ class BackgroundTask:
     def __init__(self, executor):        
         self.executor = executor
         self.user_progress = {}
-    
 
-    async def send_progress_update(self, user_name, epoch, train_acc, val_acc):
+    def clear_progress(self, user_name):
+        if user_name in self.user_progress:
+            del self.user_progress[user_name]
+
+    async def send_progress_update(self, user_name, epoch=0, train_acc=0, val_acc=0, message=''):
         # Update progress dictionary using user_id
         self.user_progress[user_name] = {
             'epoch': epoch,
             'train_acc': train_acc,
-            'val_acc': val_acc
+            'val_acc': val_acc,
+            'message': message
         }
 
     # This function retrieves the current progress for a user_id
@@ -100,6 +104,8 @@ class BackgroundTask:
                     temp_folder_path = f"{tmp_dir}/{base_path}{split}/{class_name.rsplit('/')[-2]}"
                     os.makedirs(temp_folder_path, exist_ok=True)
 
+            await self.send_progress_update('admin', message="Downloading training and validation data...")
+
             await s3.download_folder(f"{base_path}train/", local_train_path)
             await s3.download_folder(f"{base_path}val/", local_val_path)
             num_classes = len(custom_class_to_idx)
@@ -120,6 +126,7 @@ class BackgroundTask:
                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
             ])
             print(f"train_dir -> {local_train_path}")
+            await self.send_progress_update(user_name, message="Training started...")
             train_dataset = datasets.ImageFolder(local_train_path, transform=train_transform)
             val_dataset = datasets.ImageFolder(local_val_path, transform=val_transform)
             train_dataset.class_to_idx = custom_class_to_idx
@@ -214,6 +221,9 @@ class BackgroundTask:
             else:
                 print(f"Error: str{res['message']}")
 
+            await self.send_progress_update(user_name, message="Training completed.")
+
+            
             print(message)
             # Clean up memory
             vars_to_delete = [
