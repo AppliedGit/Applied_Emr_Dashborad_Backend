@@ -48,18 +48,53 @@ class S3:
         
     async def delete_s3_object(self, path):
         try:
-            temp_base_path = path.split('/')
-            if len(temp_base_path) > 1:
+            # First, check if the path exists exactly
+            response = await asyncio.to_thread(
+                s3.list_objects_v2,
+                Bucket=BUCKET_NAME,
+                Prefix=path
+            )
 
-                base_path = path.split('/')[0]
-                temp_path = path.split('/')[-1]
+            if 'Contents' not in response:
+                return "No such file or folder"
 
-                for split in ['train', 'val']:
-                    response = s3.delete_object(Bucket=BUCKET_NAME, Key=f"{base_path}/{split}/{temp_path}")
+            # If the path is exactly an object (single image)
+            exact_match = any(obj['Key'] == path for obj in response['Contents'])
+
+            if exact_match:
+                # It is a file (image), delete it directly
+                delete_response = await asyncio.to_thread(
+                    s3.delete_object,
+                    Bucket=BUCKET_NAME,
+                    Key=path
+                )
+                if delete_response['ResponseMetadata']['HTTPStatusCode'] == 204 or delete_response['ResponseMetadata']['HTTPStatusCode'] == 200:
+                    return True
+                else:
+                    return "Delete failed"
             else:
-                response = s3.delete_object(Bucket=BUCKET_NAME, Key=path)
+                # It is a folder, delete all inside
+                # Ensure the path ends with '/'
+                prefix = path if path.endswith('/') else path + '/'
+                response = await asyncio.to_thread(
+                    s3.list_objects_v2,
+                    Bucket=BUCKET_NAME,
+                    Prefix=prefix
+                )
+                if 'Contents' not in response:
+                    return "No such folder"
 
-            return True
+                delete_requests = [{'Key': obj['Key']} for obj in response['Contents']]
+
+                delete_response = await asyncio.to_thread(
+                    s3.delete_objects,
+                    Bucket=BUCKET_NAME,
+                    Delete={'Objects': delete_requests}
+                )
+                if delete_response['ResponseMetadata']['HTTPStatusCode'] == 200:
+                    return True
+                else:
+                    return "Delete failed"
         except Exception as e:
             print(f"Error: {e}")
             return str(e)

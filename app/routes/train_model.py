@@ -420,7 +420,7 @@ async def delete():
                 print(f"Error: str{res['message']}")
             return api_json_response_format(True, "Object deleted successfully.", 200, {}) 
         else:
-            return api_json_response_format(False, str(response), 500, {})
+            return api_json_response_format(False, f"ERROR: {str(response)}", 500, {})
 
     except Exception as e:
         print(f"Error: {e}")
