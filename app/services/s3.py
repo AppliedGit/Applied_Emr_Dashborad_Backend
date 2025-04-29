@@ -161,7 +161,7 @@ class S3:
                 return "Delete failed"
 
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"[X] Error: {e}")
             return str(e)
 
 
@@ -179,7 +179,7 @@ class S3:
             # Recursively delete the counterpart
             await self.delete_s3_object(counterpart)
         except Exception as e:
-            print(f"Error deleting counterpart: {e}")
+            print(f"[X] Error deleting counterpart: {e}")
 
 
     
@@ -316,60 +316,61 @@ class S3:
             
             return api_json_response_format (True,"Image uploaded successfully", 200, {})
         except Exception as e:
-            print(f"Error uploading file to S3: {e}")
+            print(f"[X] Error uploading file to S3: {e}")
             return api_json_response_format(False, str(e), 500, {})
 
     
-    async def get_dirs(self, path, folder="", type="",check=False):
+    async def get_dirs(self, path, file=False ):
 
-        dirs = []
-        prefix = f"{path}{folder}"
-        response = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix=f"{path}{folder}")
+        result = []
+        # prefix = f"{path}{folder}"
 
-        if response.get('KeyCount', 0) > 0:
+        # response = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix=f"{path}{folder}")
+        if not file:
+            response = s3.list_objects_v2(
+                Bucket=BUCKET_NAME,
+                Prefix=path,
+                Delimiter="/"
+            )
+            result = [p['Prefix'] for p in response.get('CommonPrefixes', [])]
+            print(result) 
+        else:
+            response = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix=path)
             
-            for obj in response.get('Contents'):
-                key = obj.get('Key')
-                if key.endswith('/') and check:
-                    dirs.append(key) 
-                if key.endswith('/') and key != prefix:
-                    dirs.append(key)
-                if not key.endswith('/') and type == 'file':
-                    dirs.append(key)
-        print(dirs)
 
-        return dirs
+            for obj in response.get("Contents", []):
+                key = obj["Key"]
+                if not key.endswith("/"):  # Ignore folders
+                    result.append(key)
+                    
+        return result
     
     async def download_file_async(self, s3_key, local_path, user_name=None, progress_callback=None):
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
-        print(f'Downloading {s3_key} to {local_path}')
+        print(f'[*] Downloading {s3_key} to {local_path}')
         if progress_callback:
             await progress_callback(user_name, message=f"Downloading {s3_key}")
+            await asyncio.sleep(1)
         await asyncio.get_event_loop().run_in_executor(
             executor, s3.download_file, BUCKET_NAME, s3_key, local_path
         )
 
     async def download_folder(self, s3_folder_path, local_folder_path, user_name=None, progress_callback=None):
         paginator = s3.get_paginator('list_objects_v2')
-        download_tasks = []
 
         for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix=s3_folder_path):
             for obj in page.get('Contents', []):
                 s3_key = obj['Key']
                 if s3_key.endswith('/'):
-                    # Skip directory-like keys
                     continue
 
                 relative_path = os.path.relpath(s3_key, s3_folder_path)
                 if relative_path in ('.', '..'):
-                    # Avoid accidental overwrite
                     continue
 
                 local_path = os.path.join(local_folder_path, relative_path)
-                task = self.download_file_async(s3_key, local_path, user_name, progress_callback)
-                download_tasks.append(task)
-
-        await asyncio.gather(*download_tasks)
+                await self.download_file_async(s3_key, local_path, user_name, progress_callback)
+                await asyncio.sleep(1)  # ✅ delay between downloads
 
     async def check_empty_class_folders(self, base_folder):
         try:

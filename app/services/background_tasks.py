@@ -34,6 +34,7 @@ class BackgroundTask:
     def clear_progress(self, user_name):
         if user_name in self.user_progress:
             del self.user_progress[user_name]
+            print("[*] user progress deleted.")
 
     async def send_progress_update(self, user_name, epoch=0, train_acc=0, val_acc=0, message=''):
         # Update progress dictionary using user_id
@@ -58,14 +59,14 @@ class BackgroundTask:
         temp_base_path = base_path.split('/')[0]
 
         try: 
-            class_names = await s3.get_dirs(base_path, "train/")
+            class_names = await s3.get_dirs(f"{base_path}train/")
 
             # if not class_names:
             #     return api_json_response_format(False, "Class folder not found. Please create new class", 404, {})
 
             print(f"[*] class names -> {class_names}")
 
-            class_json = await s3.get_dirs(base_path, "class_to_idx.json", "file")
+            class_json = await s3.get_dirs(f"{base_path}{json_file_name}", file=True)
 
 
             custom_class_to_idx = {name: i for i, name in enumerate(class_names)}
@@ -74,7 +75,7 @@ class BackgroundTask:
                 
                 with open(json_file_name, "w") as json_file:
                     json.dump(custom_class_to_idx, json_file, indent=4)
-                    print("Saved class-to-ID mapping to 'class_to_idx.json'")
+                    print("[*] Saved class-to-ID mapping to 'class_to_idx.json'")
 
                 with open(json_file_name, "rb") as f:
                     data = f.read()
@@ -86,9 +87,9 @@ class BackgroundTask:
 
                 if result.get('success'):
                     os.remove(json_file_name)
-                    print(f"Deleted local file: {json_file_name}")
+                    print(f"[*] Deleted local file: {json_file_name}")
                 else:
-                    print("Failed to upload json file to S3")
+                    print("[X] Failed to upload json file to S3")
             
             # tmp_dir = tempfile.mkdtemp()
             tmp_dir = 'temp'
@@ -105,6 +106,8 @@ class BackgroundTask:
                     os.makedirs(temp_folder_path, exist_ok=True)
 
             await self.send_progress_update(user_name, message="Downloading training and validation data...")
+            await asyncio.sleep(1)
+            start_time = time.time()
 
             await s3.download_folder(f"{base_path}train/", local_train_path, user_name=user_name, progress_callback=self.send_progress_update)
             await s3.download_folder(f"{base_path}val/", local_val_path, user_name=user_name, progress_callback=self.send_progress_update)
@@ -125,8 +128,9 @@ class BackgroundTask:
                 transforms.ToTensor(),
                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
             ])
-            print(f"train_dir -> {local_train_path}")
+            print(f"[*] train_dir -> {local_train_path}")
             await self.send_progress_update(user_name, message="Training started...")
+            
             train_dataset = datasets.ImageFolder(local_train_path, transform=train_transform)
             val_dataset = datasets.ImageFolder(local_val_path, transform=val_transform)
             train_dataset.class_to_idx = custom_class_to_idx
@@ -152,7 +156,10 @@ class BackgroundTask:
             best_acc = 0
             best_model = copy.deepcopy(model.state_dict())
 
-            start_time = time.time()
+            epoch = 0
+            val_acc = 0
+            train_acc = 0
+            
             for epoch in range(100):
                 model.train()
                 train_loss, correct, total = 0.0, 0, 0
@@ -168,7 +175,7 @@ class BackgroundTask:
                     _, preds = torch.max(outputs, 1)
                     correct += (preds == labels).sum().item()
                     total += labels.size(0)
-                train_acc = correct / total * 100
+                train_acc = round(correct / total * 100, 2)
 
                 model.eval()
                 val_preds, val_labels = [], []
@@ -180,25 +187,19 @@ class BackgroundTask:
                         val_preds.extend(preds.cpu())
                         val_labels.extend(labels.cpu())
 
-                val_acc = accuracy_score(val_labels, val_preds) * 100
-                print(f"Epoch {epoch+1}: Train Acc={train_acc:.2f}% | Val Acc={val_acc:.2f}%")
+                val_acc =  round(accuracy_score(val_labels, val_preds) * 100,2)
+                print(f"[*] Epoch {epoch+1}: Train Acc={train_acc:.2f}% | Val Acc={val_acc:.2f}%")
                 await self.send_progress_update('admin', epoch+1, train_acc, val_acc)
 
                 if val_acc > best_acc:
                     best_acc = val_acc
                     best_model = copy.deepcopy(model.state_dict())
-                    print(">> New best model saved!")
-            end_time = time.time()
-            elapsed = end_time - start_time
-            print(f"Elapsed time: {elapsed:.4f} seconds")
-
+                    print("[*] >> New best model saved!")
             
             pth_file_name = f"{temp_base_path}_graph_classifier.pth"
             pth_file_path = tmp_dir+"/"+pth_file_name
             torch.save(best_model, pth_file_path)
-
-            print("Training completed. Best model saved.")
-            
+           
             
             with open(pth_file_path, "rb") as f:
                     data = f.read()
@@ -207,21 +208,28 @@ class BackgroundTask:
 
             result = await s3.upload_file(base_path, file_like_obj, file_name=pth_file_name )
 
-            message = "PTH file uploaded successfully."
+            
 
             if not result.get("success"):
                 message = f"PTH file not uploaded. Error: {result.get('message')}"
+            else:
+                message = "PTH file uploaded successfully."
+                await self.send_progress_update(user_name, epoch+1, train_acc, val_acc, message=f"PTH file created successfully.")
                 
             status = 'trained'
             query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
             value = (status, temp_base_path, user_name)
             res = current_app.database.update_query(query,value)
             if res['data'] > 0:
-                print("Value updated.")
+                print("[*] Value updated.")
             else:
-                print(f"Error: str{res['message']}")
+                print(f"[X] Error: {res['message']}")
 
-            await self.send_progress_update(user_name, message="Training completed.")
+            end_time = time.time()
+            elapsed = end_time - start_time
+            print(f"[*] Elapsed time: {elapsed:.4f} seconds")
+            completed_time = round(elapsed / 60, 2)
+            await self.send_progress_update(user_name, epoch+1, train_acc, val_acc, message=f"Training completed in {completed_time} minutes.")
 
             
             print(message)
@@ -239,10 +247,10 @@ class BackgroundTask:
             import gc
             gc.collect()
             torch.cuda.empty_cache()
-            print("Model training completed")
+            print("[*] Model training completed")
 
         except Exception as e:
-            print("Exception occured. Error : "+str(e))
+            print("[X] Exception occured. Error : "+str(e))
         
 
     def train_model_async(self,base_path,user_name):

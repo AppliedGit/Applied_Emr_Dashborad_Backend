@@ -44,11 +44,11 @@ def login():
                 res['data']['role'] = role
             return res
         else:
-            print("Wrong Password..."+auth.password)
+            print("[X] Wrong Password..."+auth.password)
             return api_json_response_format(False,str("invalid credentials"),401,{})
 
     except Exception as e:
-        print("Unable to issue api token, error : "+str(e))
+        print("[X] Unable to issue api token, error : "+str(e))
         return api_json_response_format(False,"Sorry, unable to login. Error : "+str(e)+", We request you to try again.",500,{})
 
 @auth_bp.route('/refresh_token',methods=['GET'])

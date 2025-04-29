@@ -59,32 +59,27 @@ async def create_class():
 
     result = await s3.create_folders(folder_name, class_names)
     if result.get("success"):
-        print("Class created successfully.")
+        print("[*] Class created successfully.")
         upload_result = await s3.upload_file(folder_name, images, image_class_name=image_class_name) 
         if upload_result.get('success'):
-            print("Images uploaded successfully.")
+            print("[*] Images uploaded successfully.")
             response = current_app.authentication.get_username(request)
             user_name = response.get('username')
             status = 'train'
             query = "INSERT INTO train_model (user_id, model_name, status)  SELECT user_id, %s, %s FROM users  WHERE user_name = %s;"
             value = (folder_name, status, user_name)
            
-            res = current_app.database.execute_query(query,value)
-
-            # if res["success"] and res["error_code"] == 200:
-               
-            #     else:
-            #         print(f"Invalid Username...{username}")
-            #         return api_json_response_format(False,str("Sorry, unable to authenticate. Invalid Username..."),401,{})
+            res = current_app.database.execute_query(query,value)   
+            print(res)
 
         else:
-            print(f"Image not uploaded: {upload_result.get('message')}")
+            print(f"[X] Image not uploaded: {upload_result.get('message')}")
             return api_json_response_format(False, "Class created but image not uploaded.", 500, {}) 
         
         return api_json_response_format(True, "Class created successfully and Image uploaded.", 201, {})  
         
     else:
-        print(f"Class {folder_name} already exist.")
+        print(f"[*] Class {folder_name} already exist.")
         return api_json_response_format(False, result.get("message"), result.get("error_code"), {})
     
 @train_bp.route('/list_dir', methods=['POST'])
@@ -123,23 +118,15 @@ async def upload_image():
         json_file_name = "class_to_idx.json"
         response = await s3.delete_s3_object(f"{model_name}/{json_file_name}")
         if response == True:
-                print(f"Json file deleted successfully. Please train your model.")
+                print(f"[*] Json file deleted successfully. Please train your model.")
         status = 'train'
         query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
         value = (status, model_name, 'admin')
         res = current_app.database.update_query(query,value)
         if  res['data'] > 0:
-            print("Value updated.")
+            print("[*] Value updated.")
         else:
-            print(f"Error: {res['message']}")
-        # if res["success"] and res["error_code"] == 200:
-        #     if res["data"]:
-        #         password = res["data"][0]["userpwd"]
-        #     else:
-        #         print(f"Invalid Username...{username}")
-        #         return api_json_response_format(False,str("Sorry, unable to authenticate. Invalid Username..."),401,{})
-        # return api_json_response_format(False, result.get('message'), result.get('error_code'), {})
-    
+            print(f"[X] Error: {res['message']}")
 
     return api_json_response_format(True, "Image uploaded successfully.", 200, {})
 
@@ -167,10 +154,9 @@ async def train():
 
         if res['data']:
             if res['data'][0]['status'] == 'trained':
+                print("[*] Model already trained")
                 return api_json_response_format(True, "Model already trained", 200, {})
 
-        # Trigger the background task
-        # executor.submit(background_runner.train_model_async, base_path, user_name)
         current_app.background_runner.executor.submit(
             current_app.background_runner.train_model_async, base_path, user_name
         )
@@ -179,12 +165,10 @@ async def train():
         value = (status, temp_base_path, user_name)
         res = current_app.database.update_query(query,value)
         if res['data'] > 0:
-            print("Value updated.")
+            print("[*] Value updated.")
         else:
-            print(f"Error: str{res['message']}")
+            print(f"[X] Error: str{res['message']}")
 
-        # Immediately return a response to the client
-        # return jsonify({"success": True, "message": "Model training started in the background."}), 202
         return api_json_response_format(True, "Model training started...", 200, {})
 
     except Exception as e:
@@ -195,210 +179,23 @@ async def train():
 def get_train_model_progress():
     def generate():
         user_name = 'admin'
+        last_message = None
         while True:
             
             progress = current_app.background_runner.get_progress(user_name)  
-            if progress:
+            if progress and progress != last_message:
+                last_message = progress
                 data_dict = json.loads(progress)
                 yield f"data: {data_dict}\n\n"
 
-            if progress and data_dict['epoch'] >= 100:
-                print(f"Epoch 100 reached for user {user_name}, stopping stream.")
-                current_app.background_runner.clear_progress('admin')
-                break
+                if  "Training completed" in data_dict['message']:
+                    print(f"[*] Epoch 100 reached for user {user_name}, stopping stream.")
+                    current_app.background_runner.clear_progress(user_name)
+                    break
             time.sleep(1)
 
     return Response(stream_with_context(generate()), content_type='text/event-stream')
-# @train_bp.route('/train_model', methods=['POST'])
-# @Authentication.token_required
-# async def train_model():
-#     data = request.get_json()
-#     base_path = data.get('base_path')
-#     json_file_name = "class_to_idx.json"
 
-#     if not base_path:
-#         return api_json_response_format(False, "Folder name not found", 404, {})
-    
-#     # train_dirs = await s3.get_dirs(path, "train")
-#     # val_dirs = await s3.get_dirs(path, "val")
-
-#     # train_dir = f"{base_path}train"
-#     # val_dir = f"{base_path}val"
-#     base_path = f"{base_path.split('/')[0]}/"
-#     temp_base_path = base_path.split('/')[0]
-#     response = current_app.authentication.get_username(request)
-#     user_name = response.get('username')
-#     query = "SELECT tr.status FROM train_model AS tr LEFT JOIN users AS us ON tr.user_id = us.user_id WHERE us.user_name = %s AND tr.model_name = %s"
-#     value = (user_name, temp_base_path)
-#     res = current_app.database.execute_query(query,value)
-
-#     if res['data']:
-#         if res['data'][0]['status'] == 'y':
-#             return api_json_response_format(True, "Model already trained", 200, {})
-
-#     try: 
-#         class_names = await s3.get_dirs(base_path, "train/")
-
-#         if not class_names:
-#             return api_json_response_format(False, "Class folder not found. Please create new class", 404, {})
-
-#         class_json = await s3.get_dirs(base_path, "class_to_idx.json", "file")
-
-#         custom_class_to_idx = {name: i for i, name in enumerate(class_names)}
-
-#         if not class_json:
-            
-#             with open(json_file_name, "w") as json_file:
-#                 json.dump(custom_class_to_idx, json_file, indent=4)
-#                 print("Saved class-to-ID mapping to 'class_to_idx.json'")
-
-#             with open(json_file_name, "rb") as f:
-#                 data = f.read()
-#                 file_like_obj = io.BytesIO(data)
-#                 file_like_obj.seek(0) 
-
-#             result = await s3.upload_file(base_path, file_like_obj, file_name=json_file_name )
-
-#             if result.get('success'):
-#                 os.remove(json_file_name)
-#                 print(f"Deleted local file: {json_file_name}")
-#             else:
-#                 return api_json_response_format(False, "Failed to upload json file to S3", 500, {})
-        
-#         # tmp_dir = tempfile.mkdtemp()
-#         tmp_dir = 'temp'
-#         if os.path.exists(tmp_dir):
-#             shutil.rmtree(tmp_dir)
-
-#         os.makedirs(tmp_dir, exist_ok=True)
-#         local_train_path = os.path.join(tmp_dir, f"{base_path}train/")
-#         local_val_path = os.path.join(tmp_dir, f"{base_path}val/")
-
-#         for split in ['train', 'val']:
-#             for class_name in class_names:
-#                 temp_folder_path = f"{tmp_dir}/{base_path}{split}/{class_name.rsplit('/')[-2]}"
-#                 os.makedirs(temp_folder_path, exist_ok=True)
-
-#         await s3.download_folder(f"{base_path}train/", local_train_path)
-#         await s3.download_folder(f"{base_path}val/", local_val_path)
-#         num_classes = len(custom_class_to_idx)
-
-#         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-#         train_transform = transforms.Compose([
-#             transforms.Resize((256, 256)),
-#             transforms.RandomHorizontalFlip(),
-#             transforms.RandomRotation(10),
-#             transforms.CenterCrop(224),
-#             transforms.ToTensor(),
-#             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-#         ])
-#         val_transform = transforms.Compose([
-#             transforms.Resize((224, 224)),
-#             transforms.ToTensor(),
-#             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-#         ])
-#         print(f"train_dir -> {local_train_path}")
-#         train_dataset = datasets.ImageFolder(local_train_path, transform=train_transform)
-#         val_dataset = datasets.ImageFolder(local_val_path, transform=val_transform)
-#         train_dataset.class_to_idx = custom_class_to_idx
-#         val_dataset.class_to_idx = custom_class_to_idx
-
-#         class_names = sorted({os.path.basename(os.path.dirname(path)) for path, _ in train_dataset.samples})
-#         custom_class_to_idx = {class_name: idx for idx, class_name in enumerate(class_names)}
-
-#         train_dataset.samples = [(path, custom_class_to_idx[os.path.basename(os.path.dirname(path))]) for path, _ in train_dataset.samples]
-#         val_dataset.samples = [(path, custom_class_to_idx[os.path.basename(os.path.dirname(path))]) for path, _ in val_dataset.samples]
-        
-
-#         train_loader = DataLoader(train_dataset, batch_size=5, shuffle=True)
-#         val_loader = DataLoader(val_dataset, batch_size=5)
-
-#         model = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
-#         model.fc = nn.Linear(model.fc.in_features, num_classes)
-#         model = model.to(device)
-
-#         criterion = nn.CrossEntropyLoss()
-#         optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
-
-#         best_acc = 0
-#         best_model = copy.deepcopy(model.state_dict())
-
-#         start_time = time.time()
-#         for epoch in range(100):
-#             model.train()
-#             train_loss, correct, total = 0.0, 0, 0
-#             for imgs, labels in train_loader:
-#                 imgs, labels = imgs.to(device), labels.to(device)
-#                 outputs = model(imgs)
-#                 loss = criterion(outputs, labels)
-#                 optimizer.zero_grad()
-#                 loss.backward()
-#                 optimizer.step()
-
-#                 train_loss += loss.item()
-#                 _, preds = torch.max(outputs, 1)
-#                 correct += (preds == labels).sum().item()
-#                 total += labels.size(0)
-#             train_acc = correct / total * 100
-
-#             model.eval()
-#             val_preds, val_labels = [], []
-#             with torch.no_grad():
-#                 for imgs, labels in val_loader:
-#                     imgs, labels = imgs.to(device), labels.to(device)
-#                     outputs = model(imgs)
-#                     _, preds = torch.max(outputs, 1)
-#                     val_preds.extend(preds.cpu())
-#                     val_labels.extend(labels.cpu())
-
-#             val_acc = accuracy_score(val_labels, val_preds) * 100
-#             print(f"Epoch {epoch+1}: Train Acc={train_acc:.2f}% | Val Acc={val_acc:.2f}%")
-
-#             if val_acc > best_acc:
-#                 best_acc = val_acc
-#                 best_model = copy.deepcopy(model.state_dict())
-#                 print(">> New best model saved!")
-#         end_time = time.time()
-#         elapsed = end_time - start_time
-#         print(f"Elapsed time: {elapsed:.4f} seconds")
-
-        
-#         pth_file_name = f"{temp_base_path}_graph_classifier.pth"
-#         pth_file_path = tmp_dir+"/"+pth_file_name
-#         torch.save(best_model, pth_file_path)
-
-#         print("Training completed. Best model saved.")
-        
-#         status = 'y'
-#         query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
-#         value = (status, temp_base_path, user_name)
-#         res = current_app.database.update_query(query,value)
-#         if res['data'] > 0:
-#             print("Value updated.")
-#         else:
-#             print(f"Error: str{res['message']}")
-#         with open(pth_file_path, "rb") as f:
-#                 data = f.read()
-#                 file_like_obj = io.BytesIO(data)
-#                 file_like_obj.seek(0) 
-
-#         result = await s3.upload_file(base_path, file_like_obj, file_name=pth_file_name )
-
-#         message = "PTH file uploaded successfully."
-
-#         if not result.get("success"):
-#             message = f"PTH file not uploaded. Error: {result.get('message')}"
-
-#         print(message)
-
-#         return api_json_response_format(True, "Training completed. Best model saved.", 200, {})
-
-
-
-#     except Exception as e:
-#         print("Exception occured. Error : "+str(e))
-#         return api_json_response_format(False, str(e), 500, {})
 @train_bp.route("/delete", methods=['POST'])
 @Authentication.token_required
 async def delete():
@@ -409,7 +206,7 @@ async def delete():
         # Delete the object
         response = await s3.delete_s3_object(path)
         if response == True:
-            print(f"{path} deleted successfully. Please train your model.")
+            print(f"[*] {path} deleted successfully. Please train your model.")
 
             response = current_app.authentication.get_username(request)
             temp_path = path.split('/')
@@ -420,43 +217,12 @@ async def delete():
                 json_file_name = "class_to_idx.json"
                 response = await s3.delete_s3_object(f"{model_name}/{json_file_name}")
                 if response == True:
-                     print(f"Json file deleted successfully. Please train your model.")
+                     print(f"[*] Json file deleted successfully. Please train your model.")
                 status = 'train'
                 query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
                 value = (status, model_name, user_name)
                 res = current_app.database.update_query(query,value)
 
-
-
-                # json_file_name = "class_to_idx.json"
-                # class_names = await s3.get_dirs(f"{model_name}/", "train/")
-
-                # print(f"[*] class names -> {class_names}")
-
-                # class_json = await s3.get_dirs(f"{model_name}/", "class_to_idx.json", "file")
-
-
-                # custom_class_to_idx = {name: i for i, name in enumerate(class_names)}
-
-                
-                # if class_json:
-
-                #     with open(json_file_name, "w") as json_file:
-                #         json.dump(custom_class_to_idx, json_file, indent=4)
-                #         print("Saved class-to-ID mapping to 'class_to_idx.json'")
-
-                #     with open(json_file_name, "rb") as f:
-                #         data = f.read()
-                #         file_like_obj = io.BytesIO(data)
-                #         file_like_obj.seek(0) 
-                        
-                #     result = await s3.upload_file(f"{model_name}/", file_like_obj, file_name=json_file_name)
-
-                #     if result.get('success'):
-                #         print(f"{json_file_name} file modifed.")
-                #     else:
-                #         print(f"{json_file_name} file not modified.")
-                        
             else: 
 
                 query = "DELETE FROM train_model WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
@@ -464,16 +230,16 @@ async def delete():
                 res = current_app.database.update_query(query,value)
 
             if res['data'] > 0:
-                print("Database value updated.")
+                print("[*] Database value updated.")
             else:
-                print(f"Error: str{res['message']}")
+                print(f"[X] Error: str{res['message']}")
 
             return api_json_response_format(True, "Object deleted successfully.", 200, {}) 
         else:
             return api_json_response_format(False, f"ERROR: {str(response)}", 500, {})
 
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"[X] Error: {e}")
         return api_json_response_format(False, f"Error: {e}", 500, {})
     
 @train_bp.route('/start_predict', methods=['POST'])
@@ -491,9 +257,9 @@ async def start_predict():
             return api_json_response_format(False, "Images not found.", 404, {})
         if not excel_file:
             return api_json_response_format(False, "CSV file not found.", 404, {})
-
+        json_file_name = "class_to_idx.json"
         temp_folder_name = folder_name.split('/')[0]
-        json_file_path = f"{temp_folder_name}/class_to_idx.json"
+        json_file_path = f"{temp_folder_name}/{json_file_name}"
         pth_file_path = f"{temp_folder_name}/{temp_folder_name}_graph_classifier.pth"
 
         ext = excel_file.filename.split('.')[-1]
@@ -503,18 +269,18 @@ async def start_predict():
             elif ext in ["xls", "xlsx"]:
                 excel = pd.read_excel(excel_file, engine="openpyxl")
             else:
-                print("Unsupported file format.")
+                print("[X] Unsupported file format.")
                 return api_json_response_format(False, f"{excel_file.filename} is unsupported file format.", 400, {})
         except Exception as e:
-            print(f"Error reading Excel file: {e}")
+            print(f"[X] Error reading Excel file: {e}")
 
         
       
        
         # Check if model files exist in S3
-        is_folder_exist = await s3.get_dirs(folder_name, check=True)
-        is_json_exist = await s3.get_dirs(json_file_path, type="file")
-        is_pth_exist = await s3.get_dirs(pth_file_path, type="file")
+        is_folder_exist = await s3.get_dirs(folder_name)
+        is_json_exist = await s3.get_dirs(json_file_path, file=True)
+        is_pth_exist = await s3.get_dirs(pth_file_path, file=True)
 
         if not is_folder_exist:
             return api_json_response_format(False, "Folder path not found.", 404, {})
@@ -541,7 +307,7 @@ async def start_predict():
         # Download model + json from S3
         await s3.download_folder(temp_folder_name, os.path.join(tmp_dir, temp_folder_name))
 
-        print("Download completed")
+        print("[*] Download completed")
 
         local_json_path = os.path.join(tmp_dir, json_file_path)
         local_pth_path = os.path.join(tmp_dir, pth_file_path)
@@ -603,7 +369,7 @@ async def start_predict():
                 print(transition_output)
                 transition = f"{len(result)} rows with transition time > 60 ms."
         else:
-            print("'Transition time' column not found.")
+            print("[X] 'Transition time' column not found.")
             transition = "'Transition time' column not found."
 
 
@@ -674,9 +440,9 @@ async def correct_predictions():
             
             res = current_app.database.update_query(query,value)
             if res['data'] > 0:
-                print("Value updated.")
+                print("[*] Value updated.")
             else:
-                print(f"Error: str{res['message']}")
+                print(f"[X] Error: str{res['message']}")
             return api_json_response_format(True, f"Picture added to model {model_name}", 200, {})
         else:
             return api_json_response_format(False, response.get('message'), response.get('error_code'), {})
