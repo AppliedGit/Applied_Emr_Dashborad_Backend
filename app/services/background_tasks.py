@@ -104,10 +104,10 @@ class BackgroundTask:
                     temp_folder_path = f"{tmp_dir}/{base_path}{split}/{class_name.rsplit('/')[-2]}"
                     os.makedirs(temp_folder_path, exist_ok=True)
 
-            await self.send_progress_update('admin', message="Downloading training and validation data...")
+            await self.send_progress_update(user_name, message="Downloading training and validation data...")
 
-            await s3.download_folder(f"{base_path}train/", local_train_path)
-            await s3.download_folder(f"{base_path}val/", local_val_path)
+            await s3.download_folder(f"{base_path}train/", local_train_path, user_name=user_name, progress_callback=self.send_progress_update)
+            await s3.download_folder(f"{base_path}val/", local_val_path, user_name=user_name, progress_callback=self.send_progress_update)
             num_classes = len(custom_class_to_idx)
 
             device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

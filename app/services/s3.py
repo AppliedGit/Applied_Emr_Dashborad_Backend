@@ -46,58 +46,141 @@ class S3:
         except Exception as e:
             return api_json_response_format(False, str(e), 500, {})
         
+    # async def delete_s3_object(self, path):
+    #     try:
+    #         # First, check if the path exists exactly
+    #         response = await asyncio.to_thread(
+    #             s3.list_objects_v2,
+    #             Bucket=BUCKET_NAME,
+    #             Prefix=path
+    #         )
+
+    #         if 'Contents' not in response:
+    #             return "No such file or folder"
+
+    #         # If the path is exactly an object (single image)
+    #         exact_match = any(obj['Key'] == path for obj in response['Contents'])
+
+    #         if exact_match:
+    #             # It is a file (image), delete it directly
+    #             delete_response = await asyncio.to_thread(
+    #                 s3.delete_object,
+    #                 Bucket=BUCKET_NAME,
+    #                 Key=path
+    #             )
+    #             if delete_response['ResponseMetadata']['HTTPStatusCode'] == 204 or delete_response['ResponseMetadata']['HTTPStatusCode'] == 200:
+    #                 return True
+    #             else:
+    #                 return "Delete failed"
+    #         else:
+    #             # It is a folder, delete all inside
+    #             # Ensure the path ends with '/'
+    #             prefix = path if path.endswith('/') else path + '/'
+    #             response = await asyncio.to_thread(
+    #                 s3.list_objects_v2,
+    #                 Bucket=BUCKET_NAME,
+    #                 Prefix=prefix
+    #             )
+    #             if 'Contents' not in response:
+    #                 return "No such folder"
+
+    #             delete_requests = [{'Key': obj['Key']} for obj in response['Contents']]
+
+    #             delete_response = await asyncio.to_thread(
+    #                 s3.delete_objects,
+    #                 Bucket=BUCKET_NAME,
+    #                 Delete={'Objects': delete_requests}
+    #             )
+    #             if delete_response['ResponseMetadata']['HTTPStatusCode'] == 200:
+    #                 return True
+    #             else:
+    #                 return "Delete failed"
+    #     except Exception as e:
+    #         print(f"Error: {e}")
+    #         return str(e)
     async def delete_s3_object(self, path):
         try:
-            # First, check if the path exists exactly
+            prefix = path if path.endswith('/') else path + '/'
+
+            # List all objects under the prefix (folder or file)
             response = await asyncio.to_thread(
                 s3.list_objects_v2,
                 Bucket=BUCKET_NAME,
-                Prefix=path
+                Prefix=prefix
             )
 
+            # If nothing found under the prefix
             if 'Contents' not in response:
-                return "No such file or folder"
-
-            # If the path is exactly an object (single image)
-            exact_match = any(obj['Key'] == path for obj in response['Contents'])
-
-            if exact_match:
-                # It is a file (image), delete it directly
-                delete_response = await asyncio.to_thread(
-                    s3.delete_object,
-                    Bucket=BUCKET_NAME,
-                    Key=path
-                )
-                if delete_response['ResponseMetadata']['HTTPStatusCode'] == 204 or delete_response['ResponseMetadata']['HTTPStatusCode'] == 200:
-                    return True
-                else:
-                    return "Delete failed"
-            else:
-                # It is a folder, delete all inside
-                # Ensure the path ends with '/'
-                prefix = path if path.endswith('/') else path + '/'
-                response = await asyncio.to_thread(
+                # Check if it's a single file instead of a folder
+                file_response = await asyncio.to_thread(
                     s3.list_objects_v2,
                     Bucket=BUCKET_NAME,
-                    Prefix=prefix
+                    Prefix=path
                 )
-                if 'Contents' not in response:
-                    return "No such folder"
 
-                delete_requests = [{'Key': obj['Key']} for obj in response['Contents']]
+                # If no file either, return error
+                if 'Contents' not in file_response:
+                    return "No such file or folder"
 
-                delete_response = await asyncio.to_thread(
-                    s3.delete_objects,
-                    Bucket=BUCKET_NAME,
-                    Delete={'Objects': delete_requests}
-                )
-                if delete_response['ResponseMetadata']['HTTPStatusCode'] == 200:
-                    return True
+                exact_match = any(obj['Key'] == path for obj in file_response['Contents'])
+
+                if exact_match:
+                    # It's a file (not folder), delete directly
+                    delete_response = await asyncio.to_thread(
+                        s3.delete_object,
+                        Bucket=BUCKET_NAME,
+                        Key=path
+                    )
+                    if delete_response['ResponseMetadata']['HTTPStatusCode'] in [200, 204]:
+                        await self._delete_counterpart(path)
+                        return True
+                    else:
+                        return "Delete failed"
                 else:
-                    return "Delete failed"
+                    return "No such file or folder"
+
+            # Delete all objects under the folder
+            delete_requests = [{'Key': obj['Key']} for obj in response['Contents']]
+
+            # Try to delete the folder marker if it exists
+            if not path.endswith('/'):
+                delete_requests.append({'Key': path + '/'})
+            else:
+                delete_requests.append({'Key': path})
+
+            delete_response = await asyncio.to_thread(
+                s3.delete_objects,
+                Bucket=BUCKET_NAME,
+                Delete={'Objects': delete_requests}
+            )
+
+            if delete_response['ResponseMetadata']['HTTPStatusCode'] == 200:
+                await self._delete_counterpart(prefix)
+                return True
+            else:
+                return "Delete failed"
+
         except Exception as e:
             print(f"Error: {e}")
             return str(e)
+
+
+
+    # Helper method to delete the counterpart path (train <-> val)
+    async def _delete_counterpart(self, original_path):
+        try:
+            if "train/" in original_path:
+                counterpart = original_path.replace("train/", "val/")
+            elif "val/" in original_path:
+                counterpart = original_path.replace("val/", "train/")
+            else:
+                return
+
+            # Recursively delete the counterpart
+            await self.delete_s3_object(counterpart)
+        except Exception as e:
+            print(f"Error deleting counterpart: {e}")
+
 
     
     async def list_folder(self, request, prefix="", ):
@@ -257,14 +340,16 @@ class S3:
 
         return dirs
     
-    async def download_file_async(self, s3_key, local_path):
+    async def download_file_async(self, s3_key, local_path, user_name=None, progress_callback=None):
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
         print(f'Downloading {s3_key} to {local_path}')
+        if progress_callback:
+            await progress_callback(user_name, message=f"Downloading {s3_key}")
         await asyncio.get_event_loop().run_in_executor(
             executor, s3.download_file, BUCKET_NAME, s3_key, local_path
         )
 
-    async def download_folder(self, s3_folder_path, local_folder_path):
+    async def download_folder(self, s3_folder_path, local_folder_path, user_name=None, progress_callback=None):
         paginator = s3.get_paginator('list_objects_v2')
         download_tasks = []
 
@@ -281,7 +366,7 @@ class S3:
                     continue
 
                 local_path = os.path.join(local_folder_path, relative_path)
-                task = self.download_file_async(s3_key, local_path)
+                task = self.download_file_async(s3_key, local_path, user_name, progress_callback)
                 download_tasks.append(task)
 
         await asyncio.gather(*download_tasks)

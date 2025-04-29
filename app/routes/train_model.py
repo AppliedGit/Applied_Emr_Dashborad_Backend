@@ -1,4 +1,4 @@
-import os
+import os, io
 import shutil
 import torch
 import time
@@ -116,19 +116,22 @@ async def upload_image():
         
     result = await s3.upload_file(folder_path, files)
 
-    if not result.get("success"):
-        model_name = folder_path.split('/'[0])
+    if result.get("success"):
+        model_name = folder_path.split('/')[0]
         response = current_app.authentication.get_username(request)
         user_name = response.get('username')
+        json_file_name = "class_to_idx.json"
+        response = await s3.delete_s3_object(f"{model_name}/{json_file_name}")
+        if response == True:
+                print(f"Json file deleted successfully. Please train your model.")
         status = 'train'
         query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
-        value = (status, model_name, user_name)
-        
+        value = (status, model_name, 'admin')
         res = current_app.database.update_query(query,value)
-        if res['data'] > 0:
+        if  res['data'] > 0:
             print("Value updated.")
         else:
-            print(f"Error: str{res['message']}")
+            print(f"Error: {res['message']}")
         # if res["success"] and res["error_code"] == 200:
         #     if res["data"]:
         #         password = res["data"][0]["userpwd"]
@@ -203,7 +206,7 @@ def get_train_model_progress():
                 print(f"Epoch 100 reached for user {user_name}, stopping stream.")
                 current_app.background_runner.clear_progress('admin')
                 break
-            time.sleep(5)
+            time.sleep(1)
 
     return Response(stream_with_context(generate()), content_type='text/event-stream')
 # @train_bp.route('/train_model', methods=['POST'])
@@ -409,17 +412,62 @@ async def delete():
             print(f"{path} deleted successfully. Please train your model.")
 
             response = current_app.authentication.get_username(request)
+            temp_path = path.split('/')
             model_name = path.split('/')[0]
             user_name = response.get('username')
-            status = 'train'
-            query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
-            value = (status, model_name, user_name)
             
-            res = current_app.database.update_query(query,value)
+            if len(temp_path) > 2:
+                json_file_name = "class_to_idx.json"
+                response = await s3.delete_s3_object(f"{model_name}/{json_file_name}")
+                if response == True:
+                     print(f"Json file deleted successfully. Please train your model.")
+                status = 'train'
+                query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
+                value = (status, model_name, user_name)
+                res = current_app.database.update_query(query,value)
+
+
+
+                # json_file_name = "class_to_idx.json"
+                # class_names = await s3.get_dirs(f"{model_name}/", "train/")
+
+                # print(f"[*] class names -> {class_names}")
+
+                # class_json = await s3.get_dirs(f"{model_name}/", "class_to_idx.json", "file")
+
+
+                # custom_class_to_idx = {name: i for i, name in enumerate(class_names)}
+
+                
+                # if class_json:
+
+                #     with open(json_file_name, "w") as json_file:
+                #         json.dump(custom_class_to_idx, json_file, indent=4)
+                #         print("Saved class-to-ID mapping to 'class_to_idx.json'")
+
+                #     with open(json_file_name, "rb") as f:
+                #         data = f.read()
+                #         file_like_obj = io.BytesIO(data)
+                #         file_like_obj.seek(0) 
+                        
+                #     result = await s3.upload_file(f"{model_name}/", file_like_obj, file_name=json_file_name)
+
+                #     if result.get('success'):
+                #         print(f"{json_file_name} file modifed.")
+                #     else:
+                #         print(f"{json_file_name} file not modified.")
+                        
+            else: 
+
+                query = "DELETE FROM train_model WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
+                value = (model_name, user_name)
+                res = current_app.database.update_query(query,value)
+
             if res['data'] > 0:
                 print("Database value updated.")
             else:
                 print(f"Error: str{res['message']}")
+
             return api_json_response_format(True, "Object deleted successfully.", 200, {}) 
         else:
             return api_json_response_format(False, f"ERROR: {str(response)}", 500, {})
