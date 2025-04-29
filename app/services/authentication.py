@@ -20,7 +20,7 @@ class Authentication:
             self.jwtmanager = JWTManager(app)
             self.database = Database()
         except Exception as e:
-            print(f"Exception in Authentication. Error: {e}")
+            print(f"[X] Exception in Authentication. Error: {e}", flush=True)
     
     def api_json_response_format(self,status,message,error_code,data):
         result_json = {"success" : status,"message" : message,"error_code" : error_code,"data": data}
@@ -116,7 +116,7 @@ class Authentication:
         except jwt.ExpiredSignatureError:
             return {"status_code": 401}
         except Exception as e:
-            print(f"Token auth error: {str(e)}")
+            print(f"[X] Token auth error: {str(e)}", flush=True)
             return {"status_code": -1}
     
     def get_api_user_access_token(self,username):
@@ -135,7 +135,7 @@ class Authentication:
             else:
                 return self.api_json_response_format(True,"Unable to authenticate",401,{})
         except Exception as error:
-            print(error)
+            print(error, flush=True)
             return self.api_json_response_format(False,"Sorry, We are unable to authenticate. Error : "+str(error)+", We request you to try again.",500,{})
         
     def get_username(self, request):
@@ -156,7 +156,7 @@ class Authentication:
         except jwt.ExpiredSignatureError:
             return {"status_code": 401}
         except Exception as e:
-            print(f"Token auth error: {str(e)}")
+            print(f"[X] Token auth error: {str(e)}", flush=True)
             return {"status_code": -1}
            
 

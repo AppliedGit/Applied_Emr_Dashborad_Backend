@@ -34,7 +34,7 @@ class BackgroundTask:
     def clear_progress(self, user_name):
         if user_name in self.user_progress:
             del self.user_progress[user_name]
-            print("[*] user progress deleted.")
+            print("[*] user progress deleted.", flush=True)
 
     async def send_progress_update(self, user_name, epoch=0, train_acc=0, val_acc=0, message=''):
         # Update progress dictionary using user_id
@@ -64,7 +64,7 @@ class BackgroundTask:
             # if not class_names:
             #     return api_json_response_format(False, "Class folder not found. Please create new class", 404, {})
 
-            print(f"[*] class names -> {class_names}")
+            print(f"[*] class names -> {class_names}", flush=True)
 
             class_json = await s3.get_dirs(f"{base_path}{json_file_name}", file=True)
 
@@ -75,7 +75,7 @@ class BackgroundTask:
                 
                 with open(json_file_name, "w") as json_file:
                     json.dump(custom_class_to_idx, json_file, indent=4)
-                    print("[*] Saved class-to-ID mapping to 'class_to_idx.json'")
+                    print("[*] Saved class-to-ID mapping to 'class_to_idx.json'", flush=True)
 
                 with open(json_file_name, "rb") as f:
                     data = f.read()
@@ -87,9 +87,9 @@ class BackgroundTask:
 
                 if result.get('success'):
                     os.remove(json_file_name)
-                    print(f"[*] Deleted local file: {json_file_name}")
+                    print(f"[*] Deleted local file: {json_file_name}", flush=True)
                 else:
-                    print("[X] Failed to upload json file to S3")
+                    print("[X] Failed to upload json file to S3", flush=True)
             
             # tmp_dir = tempfile.mkdtemp()
             tmp_dir = 'temp'
@@ -128,7 +128,7 @@ class BackgroundTask:
                 transforms.ToTensor(),
                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
             ])
-            print(f"[*] train_dir -> {local_train_path}")
+            print(f"[*] train_dir -> {local_train_path}", flush=True)
             await self.send_progress_update(user_name, message="Training started...")
             
             train_dataset = datasets.ImageFolder(local_train_path, transform=train_transform)
@@ -188,13 +188,13 @@ class BackgroundTask:
                         val_labels.extend(labels.cpu())
 
                 val_acc =  round(accuracy_score(val_labels, val_preds) * 100,2)
-                print(f"[*] Epoch {epoch+1}: Train Acc={train_acc:.2f}% | Val Acc={val_acc:.2f}%")
+                print(f"[*] Epoch {epoch+1}: Train Acc={train_acc:.2f}% | Val Acc={val_acc:.2f}%", flush=True)
                 await self.send_progress_update('admin', epoch+1, train_acc, val_acc)
 
                 if val_acc > best_acc:
                     best_acc = val_acc
                     best_model = copy.deepcopy(model.state_dict())
-                    print("[*] >> New best model saved!")
+                    print("[*] >> New best model saved!", flush=True)
             
             pth_file_name = f"{temp_base_path}_graph_classifier.pth"
             pth_file_path = tmp_dir+"/"+pth_file_name
@@ -221,13 +221,13 @@ class BackgroundTask:
             value = (status, temp_base_path, user_name)
             res = current_app.database.update_query(query,value)
             if res['data'] > 0:
-                print("[*] Value updated.")
+                print("[*] Value updated.", flush=True)
             else:
-                print(f"[X] Error: {res['message']}")
+                print(f"[X] Error: {res['message']}", flush=True)
 
             end_time = time.time()
             elapsed = end_time - start_time
-            print(f"[*] Elapsed time: {elapsed:.4f} seconds")
+            print(f"[*] Elapsed time: {elapsed:.4f} seconds", flush=True)
             completed_time = round(elapsed / 60, 2)
             await self.send_progress_update(user_name, epoch+1, train_acc, val_acc, message=f"Training completed in {completed_time} minutes.")
 
@@ -247,10 +247,10 @@ class BackgroundTask:
             import gc
             gc.collect()
             torch.cuda.empty_cache()
-            print("[*] Model training completed")
+            print("[*] Model training completed", flush=True)
 
         except Exception as e:
-            print("[X] Exception occured. Error : "+str(e))
+            print("[X] Exception occured. Error : "+str(e), flush=True)
         
 
     def train_model_async(self,base_path,user_name):

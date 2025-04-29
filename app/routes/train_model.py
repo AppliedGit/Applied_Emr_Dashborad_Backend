@@ -25,6 +25,9 @@ BUCKET_NAME = os.getenv("BUCKET_NAME")
 
 ALLOWED_EXTENSIONS = set(['xls', 'csv', 'png', 'jpeg', 'jpg', 'ppm', 'bmp', 'pgm', 'tif', 'tiff', 'webp'])
 
+import logging
+
+
 
 @train_bp.route('/create_class', methods=['POST'])
 @Authentication.token_required
@@ -59,10 +62,10 @@ async def create_class():
 
     result = await s3.create_folders(folder_name, class_names)
     if result.get("success"):
-        print("[*] Class created successfully.")
+        print("[*] Class created successfully.", flush=True)
         upload_result = await s3.upload_file(folder_name, images, image_class_name=image_class_name) 
         if upload_result.get('success'):
-            print("[*] Images uploaded successfully.")
+            print("[*] Images uploaded successfully.", flush=True)
             response = current_app.authentication.get_username(request)
             user_name = response.get('username')
             status = 'train'
@@ -73,13 +76,13 @@ async def create_class():
             print(res)
 
         else:
-            print(f"[X] Image not uploaded: {upload_result.get('message')}")
+            print(f"[X] Image not uploaded: {upload_result.get('message')}", flush=True)
             return api_json_response_format(False, "Class created but image not uploaded.", 500, {}) 
         
         return api_json_response_format(True, "Class created successfully and Image uploaded.", 201, {})  
         
     else:
-        print(f"[*] Class {folder_name} already exist.")
+        print(f"[*] Class {folder_name} already exist.", flush=True)
         return api_json_response_format(False, result.get("message"), result.get("error_code"), {})
     
 @train_bp.route('/list_dir', methods=['POST'])
@@ -118,15 +121,15 @@ async def upload_image():
         json_file_name = "class_to_idx.json"
         response = await s3.delete_s3_object(f"{model_name}/{json_file_name}")
         if response == True:
-                print(f"[*] Json file deleted successfully. Please train your model.")
+                print(f"[*] Json file deleted successfully. Please train your model.", flush=True)
         status = 'train'
         query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
         value = (status, model_name, 'admin')
         res = current_app.database.update_query(query,value)
         if  res['data'] > 0:
-            print("[*] Value updated.")
+            print("[*] Value updated.", flush=True)
         else:
-            print(f"[X] Error: {res['message']}")
+            print(f"[X] Error: {res['message']}", flush=True)
 
     return api_json_response_format(True, "Image uploaded successfully.", 200, {})
 
@@ -154,7 +157,8 @@ async def train():
 
         if res['data']:
             if res['data'][0]['status'] == 'trained':
-                print("[*] Model already trained")
+
+                print("[*] Model already trained", flush=True)
                 return api_json_response_format(True, "Model already trained", 200, {})
 
         current_app.background_runner.executor.submit(
@@ -165,9 +169,9 @@ async def train():
         value = (status, temp_base_path, user_name)
         res = current_app.database.update_query(query,value)
         if res['data'] > 0:
-            print("[*] Value updated.")
+            print("[*] Value updated.", flush=True)
         else:
-            print(f"[X] Error: str{res['message']}")
+            print(f"[X] Error: str{res['message']}", flush=True)
 
         return api_json_response_format(True, "Model training started...", 200, {})
 
@@ -189,7 +193,7 @@ def get_train_model_progress():
                 yield f"data: {data_dict}\n\n"
 
                 if  "Training completed" in data_dict['message']:
-                    print(f"[*] Epoch 100 reached for user {user_name}, stopping stream.")
+                    print(f"[*] Epoch 100 reached for user {user_name}, stopping stream.", flush=True)
                     current_app.background_runner.clear_progress(user_name)
                     break
             time.sleep(1)
@@ -206,7 +210,7 @@ async def delete():
         # Delete the object
         response = await s3.delete_s3_object(path)
         if response == True:
-            print(f"[*] {path} deleted successfully. Please train your model.")
+            print(f"[*] {path} deleted successfully. Please train your model.", flush=True)
 
             response = current_app.authentication.get_username(request)
             temp_path = path.split('/')
@@ -217,7 +221,7 @@ async def delete():
                 json_file_name = "class_to_idx.json"
                 response = await s3.delete_s3_object(f"{model_name}/{json_file_name}")
                 if response == True:
-                     print(f"[*] Json file deleted successfully. Please train your model.")
+                     print(f"[*] Json file deleted successfully. Please train your model.", flush=True)
                 status = 'train'
                 query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
                 value = (status, model_name, user_name)
@@ -230,16 +234,16 @@ async def delete():
                 res = current_app.database.update_query(query,value)
 
             if res['data'] > 0:
-                print("[*] Database value updated.")
+                print("[*] Database value updated.",flush=True)
             else:
-                print(f"[X] Error: str{res['message']}")
+                print(f"[X] Error: str{res['message']}",flush=True)
 
             return api_json_response_format(True, "Object deleted successfully.", 200, {}) 
         else:
             return api_json_response_format(False, f"ERROR: {str(response)}", 500, {})
 
     except Exception as e:
-        print(f"[X] Error: {e}")
+        print(f"[X] Error: {e}", flush=True)
         return api_json_response_format(False, f"Error: {e}", 500, {})
     
 @train_bp.route('/start_predict', methods=['POST'])
@@ -269,10 +273,10 @@ async def start_predict():
             elif ext in ["xls", "xlsx"]:
                 excel = pd.read_excel(excel_file, engine="openpyxl")
             else:
-                print("[X] Unsupported file format.")
+                print("[X] Unsupported file format.", flush=True)
                 return api_json_response_format(False, f"{excel_file.filename} is unsupported file format.", 400, {})
         except Exception as e:
-            print(f"[X] Error reading Excel file: {e}")
+            print(f"[X] Error reading Excel file: {e}" ,flush=True)
 
         
       
@@ -307,7 +311,7 @@ async def start_predict():
         # Download model + json from S3
         await s3.download_folder(temp_folder_name, os.path.join(tmp_dir, temp_folder_name))
 
-        print("[*] Download completed")
+        print("[*] Download completed", flush=True)
 
         local_json_path = os.path.join(tmp_dir, json_file_path)
         local_pth_path = os.path.join(tmp_dir, pth_file_path)
@@ -357,19 +361,19 @@ async def start_predict():
         if transition_col:
             result = excel[excel[transition_col] > 60]
             if result.empty:
-                print("All transition times are ≤ 60 ms.")
+                print("All transition times are ≤ 60 ms.", flush=True)
                 transition = "All transition times are ≤ 60 ms."
             else:
-                print("\nTransition times > 60 ms:")
+                print("\nTransition times > 60 ms:", flush=True)
                 if "Tap changer transition" in excel.columns:
                     transition_output = result[[transition_col, "Tap changer transition"]].to_string(index=False)
                 else:
                     transition_output = result[[transition_col]].to_string(index=False)
 
-                print(transition_output)
+                print(transition_output, flush=True)
                 transition = f"{len(result)} rows with transition time > 60 ms."
         else:
-            print("[X] 'Transition time' column not found.")
+            print("[X] 'Transition time' column not found.", flush=True)
             transition = "'Transition time' column not found."
 
 
@@ -440,9 +444,9 @@ async def correct_predictions():
             
             res = current_app.database.update_query(query,value)
             if res['data'] > 0:
-                print("[*] Value updated.")
+                print("[*] Value updated.", flush=True)
             else:
-                print(f"[X] Error: str{res['message']}")
+                print(f"[X] Error: str{res['message']}", flush=True)
             return api_json_response_format(True, f"Picture added to model {model_name}", 200, {})
         else:
             return api_json_response_format(False, response.get('message'), response.get('error_code'), {})

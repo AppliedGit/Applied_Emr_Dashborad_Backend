@@ -15,7 +15,7 @@ class AWS_S3:
             s3_client__obj = boto3.client('s3', aws_access_key_id=S3_ACCESS_KEY, aws_secret_access_key=S3_SECRET_KEY,region_name=AWS_REGION)             
             return s3_client__obj
         except Exception as error:
-            print("error in get_s3_client(): ",str(error))
+            print("[X] error in get_s3_client(): ",str(error), flush=True)
 
 
     

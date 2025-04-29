@@ -161,7 +161,7 @@ class S3:
                 return "Delete failed"
 
         except Exception as e:
-            print(f"[X] Error: {e}")
+            print(f"[X] Error: {e}", flush=True)
             return str(e)
 
 
@@ -179,7 +179,7 @@ class S3:
             # Recursively delete the counterpart
             await self.delete_s3_object(counterpart)
         except Exception as e:
-            print(f"[X] Error deleting counterpart: {e}")
+            print(f"[X] Error deleting counterpart: {e}", flush=True)
 
 
     
@@ -316,7 +316,7 @@ class S3:
             
             return api_json_response_format (True,"Image uploaded successfully", 200, {})
         except Exception as e:
-            print(f"[X] Error uploading file to S3: {e}")
+            print(f"[X] Error uploading file to S3: {e}", flush=True)
             return api_json_response_format(False, str(e), 500, {})
 
     
@@ -333,7 +333,7 @@ class S3:
                 Delimiter="/"
             )
             result = [p['Prefix'] for p in response.get('CommonPrefixes', [])]
-            print(result) 
+            print(result, flush=True) 
         else:
             response = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix=path)
             
@@ -342,15 +342,14 @@ class S3:
                 key = obj["Key"]
                 if not key.endswith("/"):  # Ignore folders
                     result.append(key)
-                    
+
         return result
     
     async def download_file_async(self, s3_key, local_path, user_name=None, progress_callback=None):
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
-        print(f'[*] Downloading {s3_key} to {local_path}')
+        print(f'[*] Downloading {s3_key} to {local_path}', flush=True)
         if progress_callback:
             await progress_callback(user_name, message=f"Downloading {s3_key}")
-            await asyncio.sleep(1)
         await asyncio.get_event_loop().run_in_executor(
             executor, s3.download_file, BUCKET_NAME, s3_key, local_path
         )

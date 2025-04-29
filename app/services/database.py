@@ -34,12 +34,12 @@ class Database:
                 result = cursor.fetchall()
                 res = self.api_json_response_format(True,"success",200,result)
         except pymysql.MySQLError as e:
-            print("MySQL error:", e)
+            print("MySQL error:", e, flush=True)
             self.connect()  # Reconnect on error
             return self.execute_query(query, values)
         except Exception as e:
             error = f"Error while execute query. Error : {e}"
-            print(error)
+            print(error, flush=True)
             res = self.api_json_response_format(False,error,500,{})
         finally:                    
             return res
@@ -62,15 +62,15 @@ class Database:
                 res = self.api_json_response_format(False,error_msg,500,{})
             else:          
                 error = f"Error while update query. Error : {e}"
-                print(error)
+                print(error, flush=True)
                 res = self.api_json_response_format(False,error,500,{})
         except pymysql.MySQLError as e:
-            print("MySQL error:", e)
+            print("MySQL error:", e, flush=True)
             self.connect()  # Reconnect on error
             return self.update_query(query, values)
         except Exception as e:
             error = f"Error while execute query. Error : {e}"
-            print(error)
+            print(error, flush=True)
             res = self.api_json_response_format(False,error,500,{})
         finally:            
             return res
@@ -93,10 +93,10 @@ class Database:
             else:
                 error = str(e)        
                 error = f"Error while inserting query. Error : {e}"
-                print(error)
+                print(error, flush=True)
                 res = self.api_json_response_format(False,error,500,{})
         except pymysql.MySQLError as e:
-            print("MySQL error:", e)
+            print("MySQL error:", e, flush=True)
             self.connect()  # Reconnect on error
             return self.insert_query(query, values)
         except Exception as e:
