@@ -1,4 +1,5 @@
 Flask[async]
+uvicorn[standard]
 asgiref
 Flask-WTF
 flask_jwt_extended

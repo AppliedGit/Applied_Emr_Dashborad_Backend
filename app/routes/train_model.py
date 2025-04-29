@@ -440,7 +440,7 @@ async def correct_predictions():
             user_name = response.get('username')
             status = 'train'
             query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
-            value = (status, model_name, user_name)
+            value = (status, model_name, 'admin')
             
             res = current_app.database.update_query(query,value)
             if res['data'] > 0:
