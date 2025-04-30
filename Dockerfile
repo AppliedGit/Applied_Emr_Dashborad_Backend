@@ -27,6 +27,6 @@ COPY . .
 EXPOSE 5000
 
 # Run with Gunicorn
-CMD ["gunicorn", "wsgi:app", "--workers=2", "--worker-class=gevent", "--bind=0.0.0.0:5000"]
+CMD ["gunicorn", "wsgi:app", "--workers=2", "--bind=0.0.0.0:5000"]
 
 
