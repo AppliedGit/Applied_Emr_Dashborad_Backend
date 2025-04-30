@@ -161,9 +161,11 @@ async def train():
                 print("[*] Model already trained", flush=True)
                 return api_json_response_format(True, "Model already trained", 200, {})
 
-        current_app.background_runner.executor.submit(
-            current_app.background_runner.train_model_async, base_path, user_name
-        )
+        # current_app.background_runner.executor.submit(
+        #     current_app.background_runner.train_model_async, base_path, user_name
+        # )
+        current_app.background_runner.train_model_async(base_path, user_name)
+
         status = 'training'
         query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
         value = (status, temp_base_path, user_name)
@@ -381,6 +383,7 @@ async def start_predict():
             image_path = os.path.join(upload_path, filename)
             try:
                 pred_class, confidence = predict_image(image_path)
+                confidence = round(confidence, 2)
                 results.append({
                     "filename": filename,
                     "predicted_class": pred_class,
@@ -434,25 +437,26 @@ async def correct_predictions():
         
         if user_response == "no" and class_name:
             response = await s3.upload_file(class_name, images, image_class_name=image_class_name)
-
-        if response.get('success'):
-            response = current_app.authentication.get_username(request)
-            user_name = response.get('username')
-            status = 'train'
-            query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
-            value = (status, model_name, 'admin')
-            
-            res = current_app.database.update_query(query,value)
-            if res['data'] > 0:
-                print("[*] Value updated.", flush=True)
+            if response.get("success"):
+                response = current_app.authentication.get_username(request)
+                user_name = response.get('username')
+                json_file_name = "class_to_idx.json"
+                response = await s3.delete_s3_object(f"{model_name}/{json_file_name}")
+                if response == True:
+                        print(f"[*] Json file deleted successfully. Please train your model.", flush=True)
+                status = 'train'
+                query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
+                value = (status, model_name, 'admin')
+                res = current_app.database.update_query(query,value)
+                if  res['data'] > 0:
+                    print("[*] Value updated.", flush=True)
+                else:
+                    print(f"[X] Error: {res['message']}", flush=True)
+                return api_json_response_format(True, f"Picture added to model {model_name}", 200, {})
             else:
-                print(f"[X] Error: str{res['message']}", flush=True)
-            return api_json_response_format(True, f"Picture added to model {model_name}", 200, {})
-        else:
-            return api_json_response_format(False, response.get('message'), response.get('error_code'), {})
+                return api_json_response_format(False, response.get('message'), response.get('error_code'), {})
 
 
-        
 
     except Exception as e:
         return api_json_response_format(False, f"Error: {str(e)}", 500, {})

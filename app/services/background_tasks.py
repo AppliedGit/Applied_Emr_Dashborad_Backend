@@ -143,8 +143,8 @@ class BackgroundTask:
             val_dataset.samples = [(path, custom_class_to_idx[os.path.basename(os.path.dirname(path))]) for path, _ in val_dataset.samples]
             
 
-            train_loader = DataLoader(train_dataset, batch_size=5, shuffle=True)
-            val_loader = DataLoader(val_dataset, batch_size=5)
+            train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
+            val_loader = DataLoader(val_dataset, batch_size=32)
 
             model = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
             model.fc = nn.Linear(model.fc.in_features, num_classes)
