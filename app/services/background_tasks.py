@@ -273,11 +273,7 @@ class BackgroundTask:
         task_id = uuid.uuid4().hex
 
         def run_training():
-            # Safely run the async function in a new event loop in this thread
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            loop.run_until_complete(self.train_model_background(base_path, user_name))
-            loop.close()
+            asyncio.run(self.train_model_background(base_path, user_name))
 
         self.executor.submit_stored(task_id, run_training)
         print(task_id)
