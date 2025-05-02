@@ -132,6 +132,32 @@ jobs:
           target: /root/.env
           strip_components: 0
 
+      - name: Setup watcher script 
+        run: |
+          ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} << 'EOF'
+            mkdir -p /var/shared
+            chmod 777 /var/shared
+
+            cat << 'EOT' > /usr/local/bin/watch_training.sh
+            #!/bin/bash
+            FILE="/var/shared/training_done"
+            if [ -f "$FILE" ]; then
+                echo "Training complete detected, restarting service..."
+                systemctl restart emrapi
+                rm -f "$FILE"
+            fi
+
+          EOF
+
+      - name: Setup cron job on droplet
+        run: |
+          ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} "
+            chmod +x /usr/local/bin/watch_training.sh
+
+            # Add cron job if not exists
+            (crontab -l 2>/dev/null | grep -q 'watch_training.sh') || (crontab -l 2>/dev/null; echo "* * * * * /usr/local/bin/watch_training.sh") | crontab -
+
+
       - name: Deploy to Droplet and Setup Systemd Service
         run: |
           ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} << EOF
@@ -154,13 +180,13 @@ jobs:
             Restart=always
             ExecStartPre=-/usr/bin/docker stop $CONTAINER_NAME
             ExecStartPre=-/usr/bin/docker rm $CONTAINER_NAME
-            ExecStart=/usr/bin/docker run --rm --name $CONTAINER_NAME --env-file /root/.env/.env -p 5000:5000 $DOCKER_REGISTRY/$DOCKER_IMAGE:$IMAGE_TAG
+            ExecStart=/usr/bin/docker run --rm --name $CONTAINER_NAME --env-file /root/.env/.env -v /var/shared:/shared -p 5000:5000 $DOCKER_REGISTRY/$DOCKER_IMAGE:$IMAGE_TAG
             ExecStop=/usr/bin/docker stop $CONTAINER_NAME
 
             [Install]
             WantedBy=multi-user.target
             SERVICE
-            
+              # Reload systemd to recognize the new service  
 
       - name: Enable and Start systemd Service
         run: |
@@ -188,16 +214,22 @@ jobs:
                       proxy_set_header X-Real-IP \$remote_addr;
                       proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
                       proxy_set_header X-Forwarded-Proto \$scheme;
-                      proxy_set_header Connection "keep-alive";
+                      
+                      # Critical for SSE
+                      proxy_set_header Connection '';
+                      chunked_transfer_encoding off;
 
+                      # Disable buffering for real-time streaming
+                      proxy_buffering off;
+                      proxy_cache off;
+
+                      # Increase timeouts for long-lived SSE connections
                       proxy_read_timeout 3600s;
                       proxy_connect_timeout 600s;
                       proxy_send_timeout 600s;
                       send_timeout 600s;
 
-                      proxy_cache off;
-                      proxy_buffering off;
-
+                      # Prevent browser caching
                       add_header Cache-Control no-cache;
                 }
             }

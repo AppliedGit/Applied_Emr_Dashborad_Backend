@@ -51,6 +51,7 @@ class BackgroundTask:
         if progress:
             return json.dumps(progress)
         return None
+    
     async def train_model_background(self, base_path, user_name):
         
         json_file_name = "class_to_idx.json"
@@ -189,7 +190,7 @@ class BackgroundTask:
 
                 val_acc =  round(accuracy_score(val_labels, val_preds) * 100,2)
                 print(f"[*] Epoch {epoch+1}: Train Acc={train_acc:.2f}% | Val Acc={val_acc:.2f}%", flush=True)
-                await self.send_progress_update('admin', epoch+1, train_acc, val_acc)
+                await self.send_progress_update(user_name, epoch+1, train_acc, val_acc)
 
                 if val_acc > best_acc:
                     best_acc = val_acc
@@ -249,12 +250,27 @@ class BackgroundTask:
             torch.cuda.empty_cache()
             print("[*] Model training completed", flush=True)
 
+            with open("/shared/training_done", "w") as f:
+                f.write("done")
+            print("[*] Training done file created.", flush=True)
+
         except Exception as e:
             print("[X] Exception occured. Error : "+str(e), flush=True)
         
 
-    def train_model_async(self,base_path,user_name):
-        task_id = uuid.uuid4().hex  
-        self.executor.submit_stored(task_id, self.train_model_background, base_path, user_name)  
-        print(task_id)   
+    # def train_model_async(self,base_path,user_name):
+    #     task_id = uuid.uuid4().hex  
+    #     self.executor.submit_stored(task_id, self.train_model_background, base_path, user_name)  
+    #     print(task_id)   
+    #     return task_id
+    
+    def train_model_async(self, base_path, user_name):
+        task_id = uuid.uuid4().hex
+
+        def run_training():
+            asyncio.run(self.train_model_background(base_path, user_name))
+
+        self.executor.submit_stored(task_id, run_training)
+        print(task_id)
         return task_id
+
