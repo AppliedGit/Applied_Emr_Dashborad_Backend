@@ -255,6 +255,9 @@ class BackgroundTask:
             print("[*] Model training completed", flush=True)
             print(f"[After Deleting] Memory: {process.memory_info().rss / 1024 ** 2:.2f} MB")
 
+            with open("/shared/training_done", "w") as f:
+                f.write("done")
+            print("[*] Training done file created.", flush=True)
 
         except Exception as e:
             print("[X] Exception occured. Error : "+str(e), flush=True)

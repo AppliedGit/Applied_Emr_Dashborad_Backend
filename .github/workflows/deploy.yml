@@ -154,14 +154,35 @@ jobs:
             Restart=always
             ExecStartPre=-/usr/bin/docker stop $CONTAINER_NAME
             ExecStartPre=-/usr/bin/docker rm $CONTAINER_NAME
-            ExecStart=/usr/bin/docker run --rm --name $CONTAINER_NAME --env-file /root/.env/.env -p 5000:5000 $DOCKER_REGISTRY/$DOCKER_IMAGE:$IMAGE_TAG
+            ExecStart=/usr/bin/docker run --rm --name $CONTAINER_NAME --env-file /root/.env/.env -v /var/shared:/shared -p 5000:5000 $DOCKER_REGISTRY/$DOCKER_IMAGE:$IMAGE_TAG
             ExecStop=/usr/bin/docker stop $CONTAINER_NAME
 
             [Install]
             WantedBy=multi-user.target
             SERVICE
             
+      - name: Setup watcher script and cron job on droplet
+        run: |
+          ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} << 'EOF'
+            mkdir -p /var/shared
+            chmod 777 /var/shared
 
+            cat << 'EOT' > /usr/local/bin/watch_training.sh
+            #!/bin/bash
+            FILE="/var/shared/training_done"
+            if [ -f "$FILE" ]; then
+                echo "Training complete detected, restarting service..."
+                systemctl restart emrapi
+                rm -f "$FILE"
+            fi
+            EOT
+
+            chmod +x /usr/local/bin/watch_training.sh
+
+            # Add cron job if not exists
+            (crontab -l 2>/dev/null | grep -q 'watch_training.sh') || (crontab -l 2>/dev/null; echo "* * * * * /usr/local/bin/watch_training.sh") | crontab -
+          EOF
+          
       - name: Enable and Start systemd Service
         run: |
           ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} <<'EOF'
