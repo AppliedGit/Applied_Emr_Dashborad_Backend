@@ -151,11 +151,13 @@ jobs:
 
       - name: Setup cron job on droplet
         run: |
-          ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} "
+          ssh -o StrictHostKeyChecking=no root@${{ env.DROPLET_IP }} << 'EOF'
             chmod +x /usr/local/bin/watch_training.sh
 
             # Add cron job if not exists
-            (crontab -l 2>/dev/null | grep -q 'watch_training.sh') || (crontab -l 2>/dev/null; echo "* * * * * /usr/local/bin/watch_training.sh") | crontab -
+            (crontab -l 2>/dev/null | grep -q 'watch_training.sh') || \
+            (crontab -l 2>/dev/null; echo '* * * * * /usr/local/bin/watch_training.sh') | crontab -
+          EOF
 
 
       - name: Deploy to Droplet and Setup Systemd Service
