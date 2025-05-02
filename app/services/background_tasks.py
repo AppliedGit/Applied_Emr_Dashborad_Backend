@@ -54,6 +54,9 @@ class BackgroundTask:
     
     async def train_model_background(self, base_path, user_name):
         
+        import psutil, os
+        process = psutil.Process(os.getpid())
+        print(f"[Before Training] Memory: {process.memory_info().rss / 1024 ** 2:.2f} MB")
         json_file_name = "class_to_idx.json"
 
         base_path = f"{base_path.split('/')[0]}/"
@@ -232,7 +235,8 @@ class BackgroundTask:
             completed_time = round(elapsed / 60, 2)
             await self.send_progress_update(user_name, epoch+1, train_acc, val_acc, message=f"Training completed in {completed_time} minutes.")
 
-            
+            print(f"[After Training] Memory: {process.memory_info().rss / 1024 ** 2:.2f} MB")
+
             print(message)
             # Clean up memory
             vars_to_delete = [
@@ -249,6 +253,8 @@ class BackgroundTask:
             gc.collect()
             torch.cuda.empty_cache()
             print("[*] Model training completed", flush=True)
+            print(f"[After Deleting] Memory: {process.memory_info().rss / 1024 ** 2:.2f} MB")
+
 
         except Exception as e:
             print("[X] Exception occured. Error : "+str(e), flush=True)
@@ -264,9 +270,15 @@ class BackgroundTask:
         task_id = uuid.uuid4().hex
 
         def run_training():
-            asyncio.run(self.train_model_background(base_path, user_name))
+            # Safely run the async function in a new event loop in this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(self.train_model_background(base_path, user_name))
+            loop.close()
 
         self.executor.submit_stored(task_id, run_training)
         print(task_id)
         return task_id
+
+
 
