@@ -181,9 +181,9 @@ jobs:
             [Service]
             Restart=always
             ExecStartPre=-/usr/bin/docker stop $CONTAINER_NAME
-            ExecStartPre=-/usr/bin/docker rm $CONTAINER_NAME
-            ExecStart=/usr/bin/docker run --rm --name $CONTAINER_NAME --env-file /root/.env/.env -v /var/shared:/shared -p 5000:5000 $DOCKER_REGISTRY/$DOCKER_IMAGE:$IMAGE_TAG
-            ExecStop=/usr/bin/docker stop $CONTAINER_NAME
+            ExecStartPre=/bin/bash -c /usr/bin/docker container inspect  $CONTAINER_NAME 2> /dev/null || /usr/bin/docker run -d --name $CONTAINER_NAME --privileged -p 5000:5000 -v /var/run/docker.sock:/var/run/docker.sock -v /home/Img_models:/app/Img_models -v /home/log:/app/log  $DOCKER_REGISTRY/$DOCKER_IMAGE:$IMAGE_TAG
+            ExecStart=/usr/bin/docker start -a  $CONTAINER_NAME
+            ExecStop=/usr/bin/docker stop -t 10 $CONTAINER_NAME
 
             [Install]
             WantedBy=multi-user.target
