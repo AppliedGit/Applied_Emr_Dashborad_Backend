@@ -13,8 +13,8 @@ load_dotenv()
 class Authentication:
     def __init__(self,app) -> None:
         try:
-            self.JWT_SECRET_KEY = os.environ.get('JWT_SECRET_KEY')
-            self.EXP_TIME = int(os.environ.get('EXP_TIME'))
+            self.JWT_SECRET_KEY = "a64f5b884efe14c61cb45126d9e6dfe1d9ee556fa4502c656e4ba2b4d2f7025c"# os.environ.get('JWT_SECRET_KEY')
+            self.EXP_TIME = 60 #int(os.environ.get('EXP_TIME'))
             app.config['JWT_SECRET_KEY'] = self.JWT_SECRET_KEY
             app.config['JWT_COOKIE_SECURE'] = True
             self.jwtmanager = JWTManager(app)

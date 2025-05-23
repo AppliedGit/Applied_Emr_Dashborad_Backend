@@ -6,7 +6,8 @@ from concurrent.futures import ThreadPoolExecutor
 import asyncio
 from io import BytesIO
 from flask import request, current_app
-
+from app.services.emr_logger import write_iiot_log
+import time
 
 
 executor = ThreadPoolExecutor()
@@ -323,36 +324,49 @@ class S3:
     async def get_dirs(self, path, file=False ):
 
         result = []
+        try:
+            if not file:
+                response = s3.list_objects_v2(
+                    Bucket=BUCKET_NAME,
+                    Prefix=path,
+                    Delimiter="/"
+                )
+                result = [p['Prefix'] for p in response.get('CommonPrefixes', [])]
+                # write_iiot_log(0,result)
+                print(result, flush=True) 
+            else:
+                response = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix=path)
+                
+
+                for obj in response.get("Contents", []):
+                    key = obj["Key"]
+                    if not key.endswith("/"):  # Ignore folders
+                        result.append(key)
+            
+        except Exception as error:
+            write_iiot_log(1,"error in get_dirs : "+str(error))
+
+            
         # prefix = f"{path}{folder}"
 
         # response = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix=f"{path}{folder}")
-        if not file:
-            response = s3.list_objects_v2(
-                Bucket=BUCKET_NAME,
-                Prefix=path,
-                Delimiter="/"
-            )
-            result = [p['Prefix'] for p in response.get('CommonPrefixes', [])]
-            print(result, flush=True) 
-        else:
-            response = s3.list_objects_v2(Bucket=BUCKET_NAME, Prefix=path)
-            
-
-            for obj in response.get("Contents", []):
-                key = obj["Key"]
-                if not key.endswith("/"):  # Ignore folders
-                    result.append(key)
+        
 
         return result
     
     async def download_file_async(self, s3_key, local_path, user_name=None, progress_callback=None):
         os.makedirs(os.path.dirname(local_path), exist_ok=True)
+        # write_iiot_log(0,f'[*] Downloading {s3_key} to {local_path}')
         print(f'[*] Downloading {s3_key} to {local_path}', flush=True)
+        write_iiot_log(0,f'[*] Downloading {s3_key} to {local_path}')
         if progress_callback:
             await progress_callback(user_name, message=f"Downloading {s3_key}")
-        await asyncio.get_event_loop().run_in_executor(
-            executor, s3.download_file, BUCKET_NAME, s3_key, local_path
-        )
+        loop = asyncio.get_running_loop()
+        write_iiot_log(0,f"Loop is closed? {loop.is_closed()}")
+        await loop.run_in_executor(executor, s3.download_file, BUCKET_NAME, s3_key, local_path)
+        # await asyncio.get_event_loop().run_in_executor(
+        #     executor, s3.download_file, BUCKET_NAME, s3_key, local_path
+        # )
 
     async def download_folder(self, s3_folder_path, local_folder_path, user_name=None, progress_callback=None):
         paginator = s3.get_paginator('list_objects_v2')
@@ -360,7 +374,7 @@ class S3:
         for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix=s3_folder_path):
             for obj in page.get('Contents', []):
                 s3_key = obj['Key']
-                if s3_key.endswith('/'):
+                if s3_key.endswith('/') or s3_key.endswith('classifier.pth'):
                     continue
 
                 relative_path = os.path.relpath(s3_key, s3_folder_path)
@@ -368,8 +382,70 @@ class S3:
                     continue
 
                 local_path = os.path.join(local_folder_path, relative_path)
+                write_iiot_log(0,"download file name for train : "+s3_key)
                 await self.download_file_async(s3_key, local_path, user_name, progress_callback)
                 await asyncio.sleep(1)  # ✅ delay between downloads
+
+    def download_folder_prediction(self, s3_folder_path, local_folder_path, user_name=None, progress_callback=None):
+        try:            
+            paginator = s3.get_paginator('list_objects_v2')
+
+            for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix=s3_folder_path):
+                try:
+                    for obj in page.get('Contents', []):
+                        s3_key = obj['Key']
+                        if s3_key.endswith('/') or s3_key.endswith('classifier.pth'):
+                            continue
+
+                        relative_path = os.path.relpath(s3_key, s3_folder_path)
+                        if relative_path in ('.', '..'):
+                            continue
+
+                        local_path = os.path.join(local_folder_path, relative_path)
+                        write_iiot_log(0,"download file name for prediction before : "+s3_key)
+                        os.makedirs(os.path.dirname(local_path), exist_ok=True)
+                        s3.download_file(BUCKET_NAME, s3_key, local_path)
+                        write_iiot_log(0,"download file name for prediction after : "+s3_key)
+                        time.sleep(1)  
+                except Exception as e:
+                    write_iiot_log(0," Exception in loop ():  "+str(e))
+
+            write_iiot_log(0,"download process completed in sssssss ")
+        except Exception as error:
+            write_iiot_log(0," Exception in download_folder_prediction():  "+str(error))
+
+
+    # async def download_folder_prediction(self, s3_folder_path, local_folder_path, user_name=None, progress_callback=None):
+    #     try:            
+    #         paginator = s3.get_paginator('list_objects_v2')
+
+    #         for page in paginator.paginate(Bucket=BUCKET_NAME, Prefix=s3_folder_path):
+    #             try:
+    #                 for obj in page.get('Contents', []):
+    #                     s3_key = obj['Key']
+    #                     if s3_key.endswith('/') or s3_key.endswith('classifier.pth'):
+    #                         continue
+
+    #                     relative_path = os.path.relpath(s3_key, s3_folder_path)
+    #                     if relative_path in ('.', '..'):
+    #                         continue
+
+    #                     local_path = os.path.join(local_folder_path, relative_path)
+    #                     write_iiot_log(0,"download file name for prediction before : "+s3_key)
+    #                     os.makedirs(os.path.dirname(local_path), exist_ok=True)
+    #                     s3.download_file(BUCKET_NAME, s3_key, local_path)
+    #                     write_iiot_log(0,"download file name for prediction after : "+s3_key)
+    #                     time.sleep(1)  
+    #             except Exception as e:
+    #                 write_iiot_log(0," Exception in loop ():  "+str(e))
+
+                
+    #             # await self.download_file_async(s3_key, local_path, user_name, progress_callback)
+    #             #asyncio.sleep(1)  # ✅ delay between downloads
+    #         write_iiot_log(0,"download process completed in sssssss ")
+    #     except Exception as error:
+    #         write_iiot_log(0," Exception in download_folder_prediction():  "+str(error))
+
 
     async def check_empty_class_folders(self, base_folder):
         try:

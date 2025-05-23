@@ -14,10 +14,14 @@ from PIL import Image
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
 import pandas as pd
+from app.services.emr_logger import write_iiot_log
+import app.services.database as db_con
+from app.services.s3_download import download_s3_files
 
 load_dotenv()
 
 s3 = S3()
+# dd = S3_test()
 
 train_bp = Blueprint("train", __name__)
 
@@ -151,23 +155,27 @@ async def train():
         response = current_app.authentication.get_username(request)
         temp_base_path = base_path.split('/')[0]
         user_name = response.get('username')
-        query = "SELECT tr.status FROM train_model AS tr LEFT JOIN users AS us ON tr.user_id = us.user_id WHERE us.user_name = %s AND tr.model_name = %s"
+        query = "SELECT tr.status,tr.model_id FROM train_model AS tr LEFT JOIN users AS us ON tr.user_id = us.user_id WHERE us.user_name = %s AND tr.model_name = %s"
         value = (user_name, temp_base_path)
         res = current_app.database.execute_query(query,value)
-
+        model_id = 0
         if res['data']:
+            model_id = res['data'][0]['model_id']
             if res['data'][0]['status'] == 'trained':
 
-                print("[*] Model already trained", flush=True)
+                write_iiot_log(0,"[*] Model already trained")
                 return api_json_response_format(True, "Model already trained", 200, {})
 
         # current_app.background_runner.executor.submit(
         #     current_app.background_runner.train_model_async, base_path, user_name
         # )
-        current_app.background_runner.train_model_async(base_path, user_name)
+        write_iiot_log(0,"model id : "+str(model_id))
+        current_app.background_runner.train_model_async(base_path, user_name,model_id)
 
         status = 'training'
         query = "UPDATE train_model  SET status = %s  WHERE model_name = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
+        write_iiot_log(0,query)
+        write_iiot_log(0,status+" "+temp_base_path+"  "+user_name)
         value = (status, temp_base_path, user_name)
         res = current_app.database.update_query(query,value)
         if res['data'] > 0:
@@ -179,26 +187,126 @@ async def train():
 
     except Exception as e:
         return api_json_response_format(False, f"Error: {str(e)}", 500, {})
+    
+
+@train_bp.route('/train_model_status', methods=['GET'])
+def train_model_status():    
+    try:
+        status_flag = 1
+        query = "SELECT epoch,train_acc,val_acc,message,updt,display_flag FROM model_status  order by status_id desc limit 1"
+        value = ()
+        # write_iiot_log(0,query)
+        # data: {'epoch': 0, 'train_acc': 0, 'val_acc': 0, 'message': 'Downloading model-1/train/one/emr_screen1.png'}
+        res = current_app.database.execute_query(query,value)
+        # print(type(res))
+        if res['data']:
+            # write_iiot_log(0,str(res['data'][0]['epoch']))
+            epoch = res['data'][0]['epoch']
+            train_acc = res['data'][0]['train_acc']
+            val_acc = res['data'][0]['val_acc']
+            message = res['data'][0]['message']
+            display_flag = res['data'][0]['display_flag']            
+            current_updt = str(res['data'][0]['updt'])
+            index = message.find("Training completed")
+            if epoch == "":
+                epoch = "0"                    
+            
+            if index >= 0:                
+                message = "Training completed"                
+                display_flag = 2
+            if message == "Training process initiated..." or message == "images files download process started..." or message == "Downloading training and validation data..." or message == 'Training started...':                
+                query = "update model_status set display_flag = -1 where message = '"+message+"' "
+                value = ()
+                current_app.database.update_query(query,value)
+                # write_iiot_log(0,"updated status ")
+                # write_iiot_log(0,res)
+            res_data = {"epoch": (int(epoch)*2),"train_acc":train_acc,"val_acc":val_acc,"message":message}
+            return {"success": True,"error_code": display_flag,"data": res_data }
+            # return {"success": True,res_data}(True, "training process status ", display_flag, res_data)                                                        
+        else:
+            write_iiot_log(0,"error in train_model_status() "+str(res["message"]))   
+            res_data = {"epoch": 0,"train_acc":0,"val_acc":0,"message":""}
+            return {"success": True,"error_code": -1,"data": res_data }
+            # return api_json_response_format(False, "error "+res["message"], 500, {})  
+
+    except Exception as error:   
+        write_iiot_log(0,"error in train_model_status() "+str(error))     
+        res_data = {"epoch": 0,"train_acc":0,"val_acc":0,"message":""}
+        return {"success": True,"error_code": -1,"data": res_data }
+        # return api_json_response_format(False, "error in train_model_status() "+str(error), 500, {})
+    
+        
 
 @train_bp.route('/train_model_progress', methods=['GET'])
+def get_train_model_progress():    
+    write_iiot_log(0,"first line model progress")
+    def generate():        
 
-def get_train_model_progress():
-    def generate():
         user_name = 'admin'
         last_message = None
+        last_updt_time = ""
+        write_iiot_log(0,"before get train model progress")
         while True:
-            
-            progress = current_app.background_runner.get_progress(user_name)  
-            if progress and progress != last_message:
-                last_message = progress
-                data_dict = json.loads(progress)
-                yield f"data: {data_dict}\n\n"
 
-                if  "Training completed" in data_dict['message']:
-                    print(f"[*] Epoch 100 reached for user {user_name}, stopping stream.", flush=True)
-                    current_app.background_runner.clear_progress(user_name)
-                    break
-            time.sleep(1)
+            try:
+                time.sleep(1)
+                query = "SELECT epoch,train_acc,val_acc,message,updt FROM model_status order by updt desc limit 1"
+                value = ()
+                # data: {'epoch': 0, 'train_acc': 0, 'val_acc': 0, 'message': 'Downloading model-1/train/one/emr_screen1.png'}
+                res = current_app.database.execute_query(query,value)
+                if "data" in res:
+                    pass
+                    # print("data available")
+                else:
+                    write_iiot_log(0,"no not available")
+                # print("**************")
+                # print(res)
+                # print(res["data"])
+                # print("**************")
+                model_id = 0
+                if res['data']:
+                    epoch = res['data'][0]['epoch']
+                    train_acc = res['data'][0]['train_acc']
+                    val_acc = res['data'][0]['val_acc']
+                    message = res['data'][0]['message']
+                    current_updt = str(res['data'][0]['updt'])
+                    index = message.find("Training completed")
+                    if epoch == "":
+                        epoch = "0"
+
+                    
+                    if current_updt != last_updt_time:
+                        last_updt_time = current_updt
+                        write_iiot_log(1,f"data: {json.dumps({'epoch': (int(epoch)*2), 'train_acc': train_acc, 'val_acc': val_acc, 'message': message})}\n\n")
+                        yield f"data: {json.dumps({'epoch': (int(epoch)*2), 'train_acc': train_acc, 'val_acc': val_acc, 'message': message})}\n\n"
+                        # yield f"data: {json.dumps({'epoch': epoch, 'train_acc': train_acc, 'val_acc': val_acc, 'message': message})}\n\n"
+
+
+                        # yield {"data": {'epoch': epoch, 'train_acc': train_acc, 'val_acc': val_acc, 'message': message}}
+                        # yield f"data: {'epoch': epoch, 'train_acc': train_acc, 'val_acc': val_acc, 'message': message}"
+                    
+                    if index >= 0:
+                        write_iiot_log(0,f"[*] Epoch 100 reached for user {user_name}, stopping stream.")
+                        print(f"[*] Epoch 100 reached for user {user_name}, stopping stream.", flush=True)
+                        break                                                            
+                    
+            except Exception as error:
+                write_iiot_log(1,str(error))
+                print(error)
+            
+            # progress = current_app.background_runner.get_progress(user_name)  
+            
+            # if progress and progress != last_message:
+            #     last_message = progress
+            #     data_dict = json.loads(progress)
+            #     yield f"data: {data_dict}\n\n"
+            #     print(data_dict)
+
+            #     if  "Training completed" in data_dict['message']:
+            #         print(f"[*] Epoch 100 reached for user {user_name}, stopping stream.", flush=True)
+            #         current_app.background_runner.clear_progress(user_name)
+            #         break
+            # time.sleep(1)
 
     return Response(stream_with_context(generate()), content_type='text/event-stream')
 
@@ -252,6 +360,7 @@ async def delete():
 @Authentication.token_required
 async def start_predict():
     try:
+        start_time = time.time()
         folder_name = request.form.get('folder_name')
         # load_model = request.form.get('load_model')
         uploaded_files = request.files.getlist('images')
@@ -267,6 +376,7 @@ async def start_predict():
         temp_folder_name = folder_name.split('/')[0]
         json_file_path = f"{temp_folder_name}/{json_file_name}"
         pth_file_path = f"{temp_folder_name}/{temp_folder_name}_graph_classifier.pth"
+        write_iiot_log(0,pth_file_path)
 
         ext = excel_file.filename.split('.')[-1]
         try:
@@ -278,22 +388,24 @@ async def start_predict():
                 print("[X] Unsupported file format.", flush=True)
                 return api_json_response_format(False, f"{excel_file.filename} is unsupported file format.", 400, {})
         except Exception as e:
-            print(f"[X] Error reading Excel file: {e}" ,flush=True)
+            write_iiot_log(1,"[X] Error reading Excel file: {e}")
+            # print(f"[X] Error reading Excel file: {e}" ,flush=True)
 
         
       
-       
+        write_iiot_log(0,"check model exist in s3")
         # Check if model files exist in S3
         is_folder_exist = await s3.get_dirs(folder_name)
         is_json_exist = await s3.get_dirs(json_file_path, file=True)
-        is_pth_exist = await s3.get_dirs(pth_file_path, file=True)
+        # is_pth_exist = await s3.get_dirs(pth_file_path, file=True)
+        write_iiot_log(0,"check model exist in s3 completed")
 
         if not is_folder_exist:
             return api_json_response_format(False, "Folder path not found.", 404, {})
         if not is_json_exist:
             return api_json_response_format(False, "Class to idx JSON file not found.", 404, {})
-        if not is_pth_exist:
-            return api_json_response_format(False, "PTH model file not found.", 404, {})
+        # if not is_pth_exist:
+        #     return api_json_response_format(False, "PTH model file not found.", 404, {})
 
         # Setup temp directory
         tmp_dir = 'predict'
@@ -307,17 +419,33 @@ async def start_predict():
         supported_exts = ('.jpg', '.jpeg', '.png', '.bmp')
         for file in uploaded_files:
             if file.filename.lower().endswith(supported_exts):
-                filename = secure_filename(file.filename)
+                # filename = secure_filename(file.filename)
+                filename = file.filename
                 file.save(os.path.join(upload_path, filename))
 
         # Download model + json from S3
-        await s3.download_folder(temp_folder_name, os.path.join(tmp_dir, temp_folder_name))
+        write_iiot_log(0,"before Download process")
 
-        print("[*] Download completed", flush=True)
+
+
+        # s3_test = S3_test()
+        download_s3_files(temp_folder_name, os.path.join(tmp_dir, temp_folder_name))
+        
+        # download_thread = s3_test.download_folder_prediction_test(temp_folder_name, os.path.join(tmp_dir, temp_folder_name))
+        # download_thread.join()
+
+        # s3.download_folder_prediction(temp_folder_name, os.path.join(tmp_dir, temp_folder_name))
+        # print("[*] Download completed", flush=True)
+        # await s3.download_folder(temp_folder_name, os.path.join(tmp_dir, temp_folder_name))
+        write_iiot_log(0,"after Download process")
 
         local_json_path = os.path.join(tmp_dir, json_file_path)
         local_pth_path = os.path.join(tmp_dir, pth_file_path)
         base_path = os.path.join(tmp_dir, temp_folder_name)
+
+        # write_iiot_log(0,local_json_path)
+        # write_iiot_log(0,local_pth_path)
+        # write_iiot_log(0,base_path)
 
         # Load class mappings
         with open(local_json_path, 'r') as f:
@@ -325,6 +453,11 @@ async def start_predict():
         idx_to_class = {v: k for k, v in class_to_idx.items()}
         class_names = [idx_to_class[i] for i in sorted(idx_to_class)]
 
+        
+        write_iiot_log(0,"load model path : "+local_pth_path)
+        write_iiot_log(0,"working model name : "+folder_name)
+        local_pth_path = "Img_models/"+folder_name+"_graph_classifier.pth"
+        write_iiot_log(0,local_pth_path)
         # Load model
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         model = models.resnet50(weights=ResNet50_Weights.IMAGENET1K_V1)
@@ -380,6 +513,7 @@ async def start_predict():
 
 
         for filename in image_files:
+            print("file name , ",filename)
             image_path = os.path.join(upload_path, filename)
             try:
                 pred_class, confidence = predict_image(image_path)
@@ -393,14 +527,22 @@ async def start_predict():
                     "output": transition_output
                 })
             except Exception as e:
+                write_iiot_log(1,str(e))
                 results.append({
                     "filename": filename,
                     "error": str(e)
                 })
 
+        end_time = time.time()
+        elapsed = end_time - start_time        
+        completed_time = round(elapsed / 60, 2)
+        print("Prediction complted time is ",completed_time)
+        write_iiot_log(1,"Prediction complted time is "+str(completed_time))
+
         return api_json_response_format(True, "Prediction completed", 200, {"results": results})
 
     except Exception as e:
+        write_iiot_log(1,str(e))
         return api_json_response_format(False, f"Server error: {str(e)}", 500, {})
 
 
