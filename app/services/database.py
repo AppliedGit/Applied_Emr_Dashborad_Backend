@@ -14,13 +14,12 @@ class Database:
             user=os.environ.get('MYSQL_USER'),
             password=os.environ.get('MYSQL_PASSWORD'),
             database=os.environ.get('MYSQL_DB'),
-            port=int(os.environ.get('MYSQL_PORT')),                      
+            port=int(os.environ.get('MYSQL_PORT')),              
             autocommit=True,
             connect_timeout=240,
             cursorclass=pymysql.cursors.DictCursor
         )
-        write_iiot_log(0,"database connected..............")
-        # print("database connected..............")
+        write_iiot_log(0,"database connected..............")        
 
     @staticmethod
     def api_json_response_format(status, message, error_code, data):
@@ -34,8 +33,8 @@ class Database:
             # self.connect()
             self.mysql.ping(reconnect=True)
             with self.mysql.cursor() as cursor:
-                cursor.execute(query, values)
-                result = cursor.fetchall()
+                cursor.execute(query, values)                                
+                result = cursor.fetchall()                
                 res = self.api_json_response_format(True,"success",200,result)
             # self.connection_close()
         except pymysql.MySQLError as e:
@@ -47,9 +46,7 @@ class Database:
         except Exception as e:
             error = f"Error while execute query. Error : {e}"
             write_iiot_log(1,query)
-            write_iiot_log(1,str(e))
-            print(query,values)
-            print(error, flush=True)
+            write_iiot_log(1,str(e))                        
             res = self.api_json_response_format(False,error,500,{})
         finally:                    
             return res
@@ -84,8 +81,7 @@ class Database:
             self.connect()  # Reconnect on error
             return self.update_query(query, values)
         except Exception as e:
-            error = f"Error while update query. Error : {e}"
-            print(error, flush=True)
+            error = f"Error while update query. Error : {e}"            
             write_iiot_log(1,error)
             res = self.api_json_response_format(False,error,500,{})
         finally:            
@@ -105,20 +101,17 @@ class Database:
                 error_msg = str(e.args[1])
                 value = error_msg.split("'")[1]
                 error_msg = f"'{value}' already exists."
-                res = self.api_json_response_format(False,error_msg,500,{})
+                res = self.api_json_response_format(False,error_msg,500,-1)
             else:
                 error = str(e)        
-                error = f"Error while inserting query. Error : {e}"
-                print(error, flush=True)
-                res = self.api_json_response_format(False,error,500,{})
-        except pymysql.MySQLError as e:
-            print("MySQL error:", e, flush=True)
+                error = f"Error while inserting query. Error : {e}"                
+                res = self.api_json_response_format(False,error,500,-1)
+        except pymysql.MySQLError as e:            
             self.connect()  # Reconnect on error
             return self.insert_query(query, values)
         except Exception as e:
-            error = f"Error while execute query. Error : {e}"
-            print(error)
-            res = self.api_json_response_format(False,error,500,{})
+            error = f"Error while execute query. Error : {e}"            
+            res = self.api_json_response_format(False,error,500,-1)
         finally:           
             return res
         

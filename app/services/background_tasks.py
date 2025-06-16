@@ -72,11 +72,7 @@ class BackgroundTask:
     
     async def train_model_background(self, base_path, user_name,model_id):
         
-        json_file_name = "class_to_idx.json"
-
-        print("base_path  ",base_path)
-        print("user_name  ",user_name)
-        
+        json_file_name = "class_to_idx.json"        
 
         base_path = f"{base_path.split('/')[0]}/"
         temp_base_path = base_path.split('/')[0]
@@ -88,8 +84,7 @@ class BackgroundTask:
             
             query = "delete from  model_status  "
             value = ()
-            res = current_app.database.update_query(query,value)
-            print(res)
+            res = current_app.database.update_query(query,value)            
             if res['data'] > 0:
                 print("[*] Value updated.", flush=True)
             else:
@@ -207,8 +202,7 @@ class BackgroundTask:
 
             epoch = 0
             val_acc = 0
-            train_acc = 0
-            print("training started ......................")
+            train_acc = 0            
             
             for epoch in range(50):
                 write_iiot_log(0,epoch)
@@ -251,9 +245,8 @@ class BackgroundTask:
             
             pth_file_name = f"{temp_base_path}_graph_classifier.pth"
             # pth_file_path = tmp_dir+"/"+pth_file_name
-            pth_file_path = "Img_models/"+pth_file_name
+            pth_file_path = "Img_models/"+pth_file_name            
             
-            print("model path : --------- ",pth_file_path)
             torch.save(best_model, pth_file_path)
             write_iiot_log(0,"model saved successfully --------- start upload process  "+pth_file_path)
             
@@ -282,10 +275,7 @@ class BackgroundTask:
 
             query = "UPDATE train_model  SET status = %s  WHERE model_id = %s AND user_id = (SELECT user_id FROM users WHERE user_name = %s);"
             write_iiot_log(0,status+" "+str(model_id)+"  "+user_name)
-            value = (status, str(model_id), user_name)
-
-
-            print(query,value)
+            value = (status, str(model_id), user_name)            
             res = current_app.database.update_query(query,value)
             if res['data'] > 0:
                 print("[*] Value updated.", flush=True)
@@ -324,7 +314,7 @@ class BackgroundTask:
 
         except Exception as e:
             write_iiot_log(1,"exception occured. error "+str(e))
-            print("[X] Exception occured. Error : "+str(e), flush=True)
+            # print("[X] Exception occured. Error : "+str(e), flush=True)
         
 
     # def train_model_async(self,base_path,user_name):

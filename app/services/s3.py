@@ -197,6 +197,9 @@ class S3:
                 key = obj["Key"]
                 if key != prefix:  
                     all_keys.append(key)
+        print("********")
+        print(all_keys)
+        print("********")
 
         root = self.build_folder_tree(all_keys)
 
@@ -215,10 +218,11 @@ class S3:
         return root["children"]
 
 
-    def build_folder_tree(self, s3_keys):
+    def build_folder_tree(self, s3_keys):                
         root = {"name": "root", "type": "folder", "children": []}
         all_prefixes = set()
-        cdn_base_url = "https://d3dmqth8jvbx2a.cloudfront.net"
+        # cdn_base_url = "https://d3dmqth8jvbx2a.cloudfront.net"
+        cdn_base_url = "https://dd5uxxzzce6o3.cloudfront.net"
 
         for key in s3_keys:
             parts = key.split("/")
@@ -484,7 +488,19 @@ class S3:
             return api_json_response_format(False, str(e), 500, {})
                         
 
-            
+    def upload_file_obj(self,file,s3_key):
+        try:
+            s3.upload_fileobj(file, BUCKET_NAME, s3_key)
+        except Exception as error:
+            print("s3 file upload error : "+error)
+
+    def upload_file_to_s3(self,file,s3_key):
+        try:
+            s3.upload_file(file, BUCKET_NAME, s3_key)
+        except Exception as error:
+            print("s3 file upload error : "+error)
+
+
 
 
 
